@@ -1,0 +1,31 @@
+# Digital Interaction Engine - Default Config
+
+project:
+  name: "Digital Interaction Engine"
+  version: "0.1.0"
+
+paths:
+  data_dir: "./data"
+  map_db: "./data/hd_map.db"
+  raw_recordings: "./data/raw_recordings"
+  processed: "./data/processed"
+  ontology_dir: "./data/ontology"
+
+vision:
+  ocr_engine: "paddleocr"
+  frame_interval: 1.0  # 抽帧间隔（秒）
+  min_text_confidence: 0.7
+
+map:
+  default_app: "taobao"
+  localization_threshold: 0.7
+
+navigation:
+  guidance_style: "elderly_friendly"  # 对老人友好的引导风格
+  risk_alert_enabled: true
+  back_path_hint_enabled: true
+
+voice:
+  engine: "edge_tts"
+  language: "zh-CN"
+  speed: "slow"  # 老人友好：语速慢

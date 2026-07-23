@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">小路 - 帮助您在App中完成操作导航的辅助工具。需要监听界面变化以提供实时语音引导。</string>
+</resources>

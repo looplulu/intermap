@@ -1,0 +1,48 @@
+# OS / editor
+.DS_Store
+.idea/
+*.iml
+*.log
+
+# Local secrets and machine config
+.env
+.env.*
+**/local.properties
+
+# Flutter / Dart
+App/.dart_tool/
+App/.flutter-plugins-dependencies
+App/build/
+App/.pub-cache/
+App/.pub/
+App/coverage/
+
+# Android build output
+App/android/.gradle/
+App/android/build/
+App/android/app/build/
+App/android/app/debug/
+App/android/app/profile/
+App/android/app/release/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Data and generated artifacts
+.uploads/
+.trae-html-share-packages/
+digital-interaction-engine/data/
+digital-interaction-engine/data/raw_recordings/
+digital-interaction-engine/data/processed/
+digital-interaction-engine/**/*.db
+digital-interaction-engine/**/*.sqlite
+ocr_part*.json
+
+# Generated packages / archives
+*.apk
+*.zip
