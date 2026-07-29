@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'models/nav_event.dart';
 import 'services/accessibility_manager.dart';
 import 'services/hd_map.dart';
+import 'services/guidance_style.dart';
 import 'services/navigation_session.dart';
 import 'services/screen_capture_service.dart';
 import 'services/screen_nav_session.dart';
@@ -72,6 +73,7 @@ class AppViewModel extends ChangeNotifier {
 
   /// 导航模式：screen（默认录屏）或 a11y（无障碍）
   String _navMode = 'screen';
+  GuidanceStyle _guidanceStyle = GuidanceStyle.concise;
 
   bool _a11yGranted = false;
   String _currentGuidance = '';
@@ -93,6 +95,7 @@ class AppViewModel extends ChangeNotifier {
 
   bool get a11yGranted => _a11yGranted;
   String get navMode => _navMode;
+  GuidanceStyle get guidanceStyle => _guidanceStyle;
   SessionStatus get sessionStatus => _navMode == 'screen'
       ? (_screenNavComplete
             ? SessionStatus.complete
@@ -123,10 +126,20 @@ class AppViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setGuidanceStyle(GuidanceStyle style) {
+    if (_guidanceStyle == style) return;
+    _guidanceStyle = style;
+    _navSession.setGuidanceStyle(style);
+    _screenNavSession.setGuidanceStyle(style);
+    notifyListeners();
+  }
+
   Future<void> init() async {
     _hdMap.addFlow(douyinRefundFlow);
     await _tts.init();
     _screenNavSession.setTts(_tts);
+    _navSession.setGuidanceStyle(_guidanceStyle);
+    _screenNavSession.setGuidanceStyle(_guidanceStyle);
     _navSession.setDependencies(
       hdMap: _hdMap,
       onGuidance: _onNavGuidance,
@@ -260,7 +273,10 @@ class AppViewModel extends ChangeNotifier {
   }
 
   Future<void> testVoice() async {
-    await _tts.speak('小路语音正常，我会用自然的女声为你做实时导航。');
+    final text = _guidanceStyle == GuidanceStyle.concise
+        ? '点右下角的我。'
+        : '当前是抖音首页，点击右下角的我，就会进入个人中心。';
+    await _tts.speak(text);
   }
 
   /// ── 训练模式 ──
@@ -1030,6 +1046,41 @@ class _DemoModePageState extends State<DemoModePage> {
             Text(
               '当前先专注抖音。告诉小路你的目标，开始后切到抖音操作。',
               style: TextStyle(color: Colors.grey[600], fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+
+            const Text(
+              '引导方式',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<GuidanceStyle>(
+                segments: GuidanceStyle.values
+                    .map(
+                      (style) => ButtonSegment<GuidanceStyle>(
+                        value: style,
+                        label: Text(style.label),
+                        icon: Icon(
+                          style == GuidanceStyle.concise
+                              ? Icons.short_text
+                              : Icons.notes,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                selected: {vm.guidanceStyle},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) {
+                  vm.setGuidanceStyle(selection.first);
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              vm.guidanceStyle.description,
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
             ),
             const SizedBox(height: 24),
 

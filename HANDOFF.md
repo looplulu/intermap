@@ -35,11 +35,11 @@
 - 换新功能：`小路1.1.00.apk` → `小路1.1.01.apk`
 - 大版本迭代（2.0）由用户决定
 
-当前最新：`小路1.0.07.apk`
+当前最新：`小路1.0.08.apk`
 
 ### 2.3 GitHub 阶段备份规则
 
-用户要求：之后每完成一个阶段性任务，就把代码上传到 GitHub 仓库 `looplulu/intermap`，按上传时的版本号命名，作为备份留存，不覆盖之前版本。
+用户要求：之后每完成一个阶段性任务，就把代码上传到 GitHub 仓库 `looplulu/intermap`，按上传时的版本号命名，作为备份留存。GitHub 上只保留最近两个备份版本：最新一次和上一次；更早的版本在新备份确认成功后删除。
 
 阶段性任务标准由 Codex 自主判断，建议按以下口径执行：
 
@@ -50,14 +50,15 @@
 
 上传命名建议：
 
-- 版本分支：`snapshot/xiaolu-1.0.07`
-- 版本标签：`xiaolu-1.0.07`
-- 提交信息：`小路1.0.07 阶段备份`
+- 版本分支：`snapshot/xiaolu-1.0.08`
+- 版本标签：`xiaolu-1.0.08`
+- 提交信息：`小路1.0.08 阶段备份`
 
 执行原则：
 
 - 不 force push，不覆盖已有同名分支或标签；
 - 如果同名版本已经存在，先提升调试版本号，例如 `1.0.08`；
+- 新备份成功后，检查 `snapshot/xiaolu-*` 分支和 `xiaolu-*` 标签，只保留版本号最新的两个，其余远端分支和标签删除；
 - 上传源码、文档、必要静态资源，不上传 `App/build/`、`.dart_tool/`、APK、训练原始视频、数据库、本地环境配置；
 - 根目录 `.gitignore` 是当前备份边界，上传前必须再检查一次 `git status`。
 
@@ -84,6 +85,7 @@
 | `main.dart` | App 入口、所有 UI 页面、AppViewModel（状态管理） |
 | `services/screen_capture_service.dart` | 录屏管理器 + UI-TARS API 客户端 + 帧变化检测器 |
 | `services/screen_nav_session.dart` | 录屏导航会话：截帧→去重→API→语音引导→卡住升级 |
+| `services/guidance_style.dart` | 导航话术整理：简洁/详细模式和模型输出口语化 |
 | `services/accessibility_manager.dart` | 无障碍事件管理（绕过插件静态Stream，自建EventChannel） |
 | `services/navigation_session.dart` | 无障碍导航会话：事件→HDMap匹配→引导 |
 | `services/training_session.dart` | 训练/学习会话管理 |
@@ -108,7 +110,15 @@
 - `settings.gradle.kts`：AGP 9.0.1, Kotlin 2.3.20
 - `gradle.properties`：`android.enableJdkImageTransform=false`
 
-### 3.3 MethodChannel / EventChannel
+### 3.3 导航话术
+
+- 默认使用“简洁”模式，只播报点击目标和位置；
+- 可在演示导航开始页切换为“详细”模式；
+- 详细模式使用“当前是……，点击……，就会进入……”的自然表达；
+- UI-TARS 返回的“页面名：……，操作：……”只作为结构化识别结果，不再原样朗读；
+- 录屏 GUI 和无障碍两条导航链路共用同一话术设置。
+
+### 3.4 MethodChannel / EventChannel
 
 | Channel | 类型 | 用途 |
 |---------|------|------|

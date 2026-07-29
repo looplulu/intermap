@@ -1,5 +1,6 @@
 import '../models/accessibility_event.dart';
 import '../models/nav_event.dart';
+import 'guidance_style.dart';
 import 'hd_map.dart';
 
 /// 页面变化检测器
@@ -90,6 +91,7 @@ class NavigationSession {
   // 语音去重
   DateTime? _lastSpokenTime;
   String _lastSpokenText = '';
+  GuidanceStyle _guidanceStyle = GuidanceStyle.concise;
 
   String get sessionId =>
       _startedAt?.millisecondsSinceEpoch.toString().substring(0, 8) ??
@@ -101,6 +103,12 @@ class NavigationSession {
   String? get app => _app;
   int get stepCount => _navigationPath.length;
   List<NavigationStep> get path => List.unmodifiable(_navigationPath);
+
+  void setGuidanceStyle(GuidanceStyle style) {
+    _guidanceStyle = style;
+    _lastSpokenText = '';
+    _lastSpokenTime = null;
+  }
 
   void setDependencies({
     required HDMap hdMap,
@@ -241,9 +249,17 @@ class NavigationSession {
 
   /// 生成引导文本
   String _generateGuidance(String nodeId) {
-    if (_hdMap == null) return '当前页面: $nodeId';
-    final (guidance, _) = _hdMap!.getGuidance(nodeId, _app ?? '', _task);
-    return guidance.isNotEmpty ? guidance : '当前页面: $nodeId';
+    if (_hdMap == null) return '稍等，我再看一下这个页面。';
+    final node = _hdMap!.getNode(nodeId, _app ?? '', _task);
+    if (node == null) return '稍等，我再看一下这个页面。';
+    final action = node.guidance.action.isNotEmpty
+        ? node.guidance.action
+        : node.guidance.enter;
+    return GuidanceFormatter.fromStructured(
+      page: node.guidance.enter,
+      action: action,
+      style: _guidanceStyle,
+    );
   }
 
   List<String> _getRisks(String nodeId) {
@@ -365,7 +381,7 @@ class NavigationSession {
 
   void _handleUnknownPage() {
     _unknownNodes.add('unknown_${_unknownNodes.length + 1}');
-    _outputGuidance('当前页面未被收录，等待页面变化...', []);
+    _outputGuidance('稍等，我再看一下这个页面。', []);
   }
 
   bool _isTaskComplete(String nodeId) {

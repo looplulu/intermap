@@ -67,8 +67,10 @@ After each self-contained milestone, upload a source snapshot to:
 https://github.com/looplulu/intermap
 ```
 
-Use the current version number in the backup name and do not overwrite earlier
-snapshots. Recommended naming:
+Use the current version number in the backup name. Keep only the latest two
+backup versions on GitHub: the newest milestone and the immediately previous
+milestone. After a new backup is confirmed, delete backup branches and tags
+older than those two. Recommended naming:
 
 - branch: `snapshot/xiaolu-<version>`
 - tag: `xiaolu-<version>`
@@ -76,6 +78,7 @@ snapshots. Recommended naming:
 
 A milestone means a verified APK version, a completed production subsite
 deployment, a closed training/backend loop, or docs that unblock the next
-development stage. Upload source, docs, and required static assets only. Do not
-upload build output, APK files, raw training videos, generated databases, local
-environment files, or tool caches.
+development stage. Do not overwrite a same-version branch or tag; if a same
+version already exists, bump the debug version first. Upload source, docs, and
+required static assets only. Do not upload build output, APK files, raw training
+videos, generated databases, local environment files, or tool caches.

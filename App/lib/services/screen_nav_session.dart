@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'screen_capture_service.dart';
 import 'tts_service.dart';
 import 'hd_map.dart';
+import 'guidance_style.dart';
 
 /// 录屏模式导航会话
 /// 截屏 → 帧变化检测 → UI-TARS API 识别 → 生成引导
@@ -27,6 +28,7 @@ class ScreenNavSession {
   DateTime? _lastSpokenTime;
   DateTime? _nodeEnterTime;
   int _stuckLevel = 0;
+  GuidanceStyle _guidanceStyle = GuidanceStyle.concise;
 
   bool _isAnalyzing = false; // 防止并发 API 调用
   final List<Map<String, String>> _apiHistory = [];
@@ -58,6 +60,12 @@ class ScreenNavSession {
 
   void setTts(TTSService tts) {
     _tts = tts;
+  }
+
+  void setGuidanceStyle(GuidanceStyle style) {
+    _guidanceStyle = style;
+    _lastSpokenText = '';
+    _lastSpokenTime = null;
   }
 
   /// 请求截屏权限并开始导航
@@ -138,14 +146,11 @@ class ScreenNavSession {
     _debug('API 结果: action="$action" type=$actionType');
 
     // 构建引导文本
-    String guidance;
-    if (action.isNotEmpty && actionType == 'click') {
-      guidance = action;
-    } else if (thought.isNotEmpty) {
-      guidance = thought;
-    } else {
-      guidance = '正在识别页面...';
-    }
+    final guidance = GuidanceFormatter.fromModel(
+      action: actionType == 'click' ? action : '',
+      thought: thought,
+      style: _guidanceStyle,
+    );
 
     // 更新历史
     if (action.isNotEmpty) {

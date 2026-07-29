@@ -25,6 +25,10 @@ class HDMap {
     return _flows['${app}_$task'];
   }
 
+  FlowNode? getNode(String nodeId, String app, String task) {
+    return getFlow(app, task)?.getNode(nodeId);
+  }
+
   /// 匹配节点 —— 优先用控件ID匹配，降级到文本匹配
   /// 返回 (nodeId, confidence, nodeData)
   MatchResult matchNode({
