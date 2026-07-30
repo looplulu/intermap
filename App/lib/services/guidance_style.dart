@@ -8,7 +8,76 @@ enum GuidanceStyle {
   const GuidanceStyle(this.label, this.description);
 }
 
+class PageIdentityStabilizer {
+  String _stableKey = '';
+  String _candidateKey = '';
+  int _candidateCount = 0;
+
+  void reset() {
+    _stableKey = '';
+    _candidateKey = '';
+    _candidateCount = 0;
+  }
+
+  bool shouldAnnounce(String pageKey) {
+    final key = pageKey.trim().isEmpty ? 'unresolved' : pageKey.trim();
+    if (_stableKey.isEmpty) {
+      _stableKey = key;
+      return true;
+    }
+    if (_samePage(_stableKey, key)) {
+      _candidateKey = '';
+      _candidateCount = 0;
+      return false;
+    }
+
+    if (_samePage(_candidateKey, key)) {
+      _candidateCount++;
+    } else {
+      _candidateKey = key;
+      _candidateCount = 1;
+    }
+    if (_candidateCount < 2) return false;
+
+    _stableKey = key;
+    _candidateKey = '';
+    _candidateCount = 0;
+    return true;
+  }
+
+  bool _samePage(String a, String b) {
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b || a.contains(b) || b.contains(a)) return true;
+    return _similarity(a, b) >= 0.58;
+  }
+
+  double _similarity(String a, String b) {
+    final setA = a.runes.toSet();
+    final setB = b.runes.toSet();
+    if (setA.isEmpty || setB.isEmpty) return 0;
+    return setA.intersection(setB).length / setA.union(setB).length;
+  }
+}
+
 class GuidanceFormatter {
+  static String extractPageName(String text) {
+    return _extractField(
+          text,
+          const ['页面名', '当前页面', '页面'],
+          const ['操作', '动作', '建议', '关键文字', '金额'],
+        ) ??
+        '';
+  }
+
+  static String normalizePageKey(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'^(?:当前是|这是|当前页面是)\s*'), '')
+        .replaceAll(RegExp(r'\d+(?:\.\d+)?'), '')
+        .replaceAll(RegExp(r'(?:页面|页)$'), '')
+        .replaceAll(RegExp(r'[^\u4e00-\u9fa5a-z]+'), '');
+  }
+
   static String fromModel({
     required String action,
     required String thought,
@@ -18,11 +87,7 @@ class GuidanceFormatter {
       thought,
       action,
     ].where((text) => text.trim().isNotEmpty).join('\n');
-    final page = _extractField(
-      combined,
-      const ['页面名', '当前页面', '页面'],
-      const ['操作', '动作', '建议'],
-    );
+    final page = extractPageName(combined);
     final extractedAction =
         _extractField(
           combined,
@@ -32,7 +97,7 @@ class GuidanceFormatter {
         _cleanAction(action.isNotEmpty ? action : thought);
 
     return fromStructured(
-      page: page ?? '',
+      page: page,
       action: extractedAction,
       style: style,
     );

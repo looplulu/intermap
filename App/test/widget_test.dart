@@ -4,6 +4,22 @@ import 'package:intermap_app/services/guidance_style.dart';
 import 'package:intermap_app/services/training_session.dart';
 
 void main() {
+  test('same page OCR drift does not announce again', () {
+    final stabilizer = PageIdentityStabilizer();
+
+    expect(stabilizer.shouldAnnounce('douyinorderdetail'), isTrue);
+    expect(stabilizer.shouldAnnounce('douyinorderdetai1'), isFalse);
+    expect(stabilizer.shouldAnnounce('douyinorderdetail'), isFalse);
+  });
+
+  test('new page requires two consecutive observations', () {
+    final stabilizer = PageIdentityStabilizer();
+
+    expect(stabilizer.shouldAnnounce('douyinhome'), isTrue);
+    expect(stabilizer.shouldAnnounce('refunddetail'), isFalse);
+    expect(stabilizer.shouldAnnounce('refunddetail'), isTrue);
+  });
+
   test('training session records a page node and candidate flow', () {
     final manager = TrainingSessionManager();
 

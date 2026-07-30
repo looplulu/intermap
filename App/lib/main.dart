@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -84,6 +85,7 @@ class AppViewModel extends ChangeNotifier {
   String _uploadStatus = '';
   bool _screenTrainingAnalyzing = false;
   String _trainingMode = 'learn';
+  String _trainingPassword = '';
   final List<Map<String, String>> _trainingApiHistory = [];
 
   // 录屏导航状态
@@ -267,8 +269,10 @@ class AppViewModel extends ChangeNotifier {
   void _onNavGuidance(String guidance, List<String> risks) {
     _currentGuidance = guidance;
     _currentRisks = risks;
-    _tts.speak(guidance);
-    if (risks.isNotEmpty) _tts.speak('注意：${risks.first}');
+    final spoken = risks.isEmpty
+        ? guidance
+        : '$guidance。注意，${risks.first}';
+    _tts.speak(spoken);
     notifyListeners();
   }
 
@@ -283,9 +287,19 @@ class AppViewModel extends ChangeNotifier {
   Future<void> startTraining({
     required String app,
     required String task,
+    required String password,
     bool useA11y = false,
     String mode = 'learn',
   }) async {
+    final passwordVerified = await _verifyTrainingPassword(password);
+    if (!passwordVerified) {
+      _uploadStatus = '训练密码不正确';
+      notifyListeners();
+      return;
+    }
+    _trainingPassword = password;
+    await _retryPendingTrainingUploads(password);
+
     final normalizedApp = app.trim().isEmpty ? 'douyin' : app.trim();
     final normalizedTask = task.trim().isEmpty
         ? (mode == 'learn' ? 'free_exploration' : 'douyin_goal_feedback')
@@ -295,7 +309,11 @@ class AppViewModel extends ChangeNotifier {
     _trainManager.reset();
     _trainLog = '';
     _uploadStatus = '';
-    _trainManager.start(app: normalizedApp, task: normalizedTask);
+    _trainManager.start(
+      app: normalizedApp,
+      task: normalizedTask,
+      captureMode: useA11y ? 'android_a11y' : 'android_screen',
+    );
 
     if (useA11y) {
       if (!a11yGranted) {
@@ -364,6 +382,13 @@ class AppViewModel extends ChangeNotifier {
     final thought = result['thought']?.toString() ?? '';
     final action = result['action']?.toString() ?? '';
     final actionType = result['action_type']?.toString() ?? '';
+    final pageName = result['page_name']?.toString() ?? '';
+    final confidence =
+        (result['confidence'] as num?)?.toDouble() ?? 0.0;
+    final amounts = (result['amounts'] as List<dynamic>?)
+            ?.map((item) => item.toString())
+            .toList() ??
+        const <String>[];
     final keyTexts = _extractTrainingTexts(result);
     final summary = thought.isNotEmpty ? thought : action;
 
@@ -377,6 +402,9 @@ class AppViewModel extends ChangeNotifier {
       keyTexts: keyTexts,
       action: action,
       actionType: actionType,
+      pageName: pageName,
+      confidence: confidence,
+      amounts: amounts,
     );
   }
 
@@ -405,6 +433,10 @@ class AppViewModel extends ChangeNotifier {
     _trainingFrameDetector.reset();
     _screenTrainingAnalyzing = false;
     _trainManager.stop();
+    await _trainManager.saveToFile();
+    if (_trainingPassword.isNotEmpty) {
+      await uploadTrainingData();
+    }
     notifyListeners();
   }
 
@@ -435,38 +467,101 @@ class AppViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final data = _trainManager.generateCandidateFlow();
-      final payload = {
-        'session_id': _trainManager.sessionId,
-        'event_type': 'session_end',
-        'timestamp': DateTime.now().toIso8601String(),
-        'app': _trainManager.app ?? 'unknown',
-        'task': _trainManager.task ?? 'unknown',
-        'capture_mode': _navMode == 'a11y' ? 'android_a11y' : 'android_screen',
-        'payload': data,
-      };
+      final file = File(await _trainManager.saveToFile());
+      final snapshot =
+          json.decode(await file.readAsString()) as Map<String, dynamic>;
+      final receipt = await _postTrainingSnapshot(
+        snapshot,
+        _trainingPassword,
+      );
+      if (receipt == null) return false;
 
-      final response = await http
-          .post(
-            Uri.parse('https://loop-lulu.com/intermap/api/events'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        _uploadStatus = '上传成功';
-        notifyListeners();
-        return true;
-      } else {
-        _uploadStatus = '上传失败(${response.statusCode})';
-        notifyListeners();
-        return false;
-      }
+      _trainManager.markUploaded();
+      await TrainingSessionManager.markFileUploaded(file, receipt);
+      final storedEvents = receipt['stored_events'] ?? 0;
+      final storedNodes = receipt['stored_nodes'] ?? 0;
+      final storedAnnotations = receipt['stored_annotations'] ?? 0;
+      _uploadStatus =
+          '上传成功：$storedEvents个事件，$storedNodes个页面，$storedAnnotations条标注';
+      notifyListeners();
+      return true;
     } catch (e) {
       _uploadStatus = '上传失败: $e';
       notifyListeners();
       return false;
+    }
+  }
+
+  Future<bool> _verifyTrainingPassword(String password) async {
+    if (password.trim().isEmpty) return false;
+    try {
+      final response = await http
+          .post(
+            Uri.parse(
+              'https://loop-lulu.com/intermap/api/verify-train-password',
+            ),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'password': password}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return false;
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return data['verified'] == true;
+    } catch (_) {
+      _uploadStatus = '暂时无法连接训练服务器';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _postTrainingSnapshot(
+    Map<String, dynamic> snapshot,
+    String password,
+  ) async {
+    final payload = {
+      'session_id': snapshot['session_id'],
+      'event_type': 'session_batch',
+      'timestamp': DateTime.now().toIso8601String(),
+      'app': snapshot['app'] ?? 'unknown',
+      'task': snapshot['task'] ?? 'unknown',
+      'capture_mode': snapshot['capture_mode'] ?? 'android_screen',
+      'password': password,
+      'payload': snapshot,
+    };
+    final response = await http
+        .post(
+          Uri.parse('https://loop-lulu.com/intermap/api/events'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(payload),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      _uploadStatus = '上传失败(${response.statusCode})';
+      notifyListeners();
+      return null;
+    }
+    final receipt = json.decode(response.body) as Map<String, dynamic>;
+    if (receipt['ok'] != true) {
+      _uploadStatus = '上传失败：${receipt['error'] ?? '服务器未确认'}';
+      notifyListeners();
+      return null;
+    }
+    return receipt;
+  }
+
+  Future<void> _retryPendingTrainingUploads(String password) async {
+    final files = await TrainingSessionManager.pendingSessionFiles();
+    for (final file in files) {
+      try {
+        final snapshot =
+            json.decode(await file.readAsString()) as Map<String, dynamic>;
+        final receipt = await _postTrainingSnapshot(snapshot, password);
+        if (receipt != null) {
+          await TrainingSessionManager.markFileUploaded(file, receipt);
+        }
+      } catch (_) {
+        // 保留文件，下次通过密码验证后继续重试。
+      }
     }
   }
 
@@ -1684,6 +1779,7 @@ class TrainRecordingPage extends StatefulWidget {
 class _TrainRecordingPageState extends State<TrainRecordingPage> {
   final _appCtrl = TextEditingController();
   final _taskCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
   final _actionCtrl = TextEditingController();
   final _targetCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
@@ -1700,6 +1796,7 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
   void dispose() {
     _appCtrl.dispose();
     _taskCtrl.dispose();
+    _passwordCtrl.dispose();
     _actionCtrl.dispose();
     _targetCtrl.dispose();
     _noteCtrl.dispose();
@@ -1735,12 +1832,14 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
                 ? _SetupForm(
                     appCtrl: _appCtrl,
                     taskCtrl: _taskCtrl,
+                    passwordCtrl: _passwordCtrl,
                     mode: widget.mode,
                     useA11y: widget.useA11y,
                     onStart: () {
                       vm.startTraining(
                         app: _appCtrl.text.trim(),
                         task: _taskCtrl.text.trim(),
+                        password: _passwordCtrl.text,
                         useA11y: widget.useA11y,
                         mode: widget.mode,
                       );
@@ -1991,12 +2090,14 @@ class _MiniStat extends StatelessWidget {
 class _SetupForm extends StatelessWidget {
   final TextEditingController appCtrl;
   final TextEditingController taskCtrl;
+  final TextEditingController passwordCtrl;
   final String mode;
   final bool useA11y;
   final VoidCallback onStart;
   const _SetupForm({
     required this.appCtrl,
     required this.taskCtrl,
+    required this.passwordCtrl,
     required this.mode,
     required this.useA11y,
     required this.onStart,
@@ -2029,6 +2130,19 @@ class _SetupForm extends StatelessWidget {
               labelText: mode == 'learn' ? '操作主题（可选）' : '你的目标',
               hintText: mode == 'learn' ? '不填就是自由探索抖音' : '例如：我要找到订单、我要联系客服',
               border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: passwordCtrl,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: '训练密码',
+              hintText: '验证通过后才能写入服务器训练数据',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.lock_outline),
             ),
           ),
           const SizedBox(height: 24),

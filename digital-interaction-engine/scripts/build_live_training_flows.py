@@ -14,6 +14,28 @@ from typing import Dict, List, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SESSIONS_DIR = PROJECT_ROOT / "data" / "live_training" / "captured_sessions"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "live_training" / "review_queue"
+SOURCE_WEIGHTS = {
+    "live_android_accessibility": 1.0,
+    "live_android_screen": 0.9,
+    "live_web_training": 0.8,
+    "video_derived": 0.5,
+    "unverified_web": 0.2,
+}
+
+
+def source_for_capture_mode(capture_mode: str) -> str:
+    value = str(capture_mode or "").lower()
+    if "accessibility" in value or "a11y" in value:
+        return "live_android_accessibility"
+    if "android" in value or "screen" in value:
+        return "live_android_screen"
+    if "video" in value:
+        return "video_derived"
+    return "live_web_training"
+
+
+def normalized_identity(value: str) -> str:
+    return re.sub(r"[^\w\u4e00-\u9fff]", "", str(value or "").lower())
 
 
 def redact_text(text: str) -> str:
@@ -57,6 +79,8 @@ def build_session_candidate(events: List[dict]) -> dict:
     session_id = first.get("session_id", "unknown")
     app = first.get("app", "")
     task = first.get("task", "")
+    capture_mode = first.get("capture_mode", "")
+    source = source_for_capture_mode(capture_mode)
 
     nodes: Dict[str, dict] = {}
     transitions: Counter = Counter()
@@ -119,6 +143,7 @@ def build_session_candidate(events: List[dict]) -> dict:
                     "confidences": [],
                     "layout_items": [],
                     "guidance_samples": Counter(),
+                    "page_types": Counter(),
                     "observations": 0,
                 },
             )
@@ -131,6 +156,8 @@ def build_session_candidate(events: List[dict]) -> dict:
                 node["confidences"].append(payload["confidence"])
             if payload.get("guidance"):
                 node["guidance_samples"][payload["guidance"]] += 1
+            if payload.get("page_type"):
+                node["page_types"][payload["page_type"]] += 1
             node["layout_items"].extend(payload.get("layout_items") or [])
 
         elif event_type == "node_transition":
@@ -183,6 +210,94 @@ def build_session_candidate(events: List[dict]) -> dict:
                 }
             )
 
+        elif event_type == "recorded_transition":
+            # Learn mode: AI analyzed recording and produced page transitions
+            from_name = payload.get("from_page_name", "")
+            to_name = payload.get("to_page_name", "")
+            action = payload.get("action", "")
+            thought_from = payload.get("thought_from", "")
+            thought_to = payload.get("thought_to", "")
+            frame_from = payload.get("frame_from", 0)
+            frame_to = payload.get("frame_to", 0)
+
+            if not from_name or not to_name:
+                continue
+
+            # Generate stable node IDs from page names
+            def page_to_node_id(name):
+                return re.sub(r'[^\w\u4e00-\u9fff]', '_', name).strip('_') or 'unknown_page'
+
+            from_id = page_to_node_id(from_name)
+            to_id = page_to_node_id(to_name)
+
+            # Register from_node
+            from_node = nodes.setdefault(
+                from_id,
+                {
+                    "node_id": from_id,
+                    "node_names": Counter(),
+                    "page_signatures": Counter(),
+                    "confidences": [],
+                    "layout_items": [],
+                    "guidance_samples": Counter(),
+                    "page_types": Counter(),
+                    "observations": 0,
+                },
+            )
+            from_node["observations"] += 1
+            from_node["node_names"][from_name] += 1
+            if thought_from:
+                from_node["layout_items"].append(thought_from)
+
+            # Register to_node
+            to_node = nodes.setdefault(
+                to_id,
+                {
+                    "node_id": to_id,
+                    "node_names": Counter(),
+                    "page_signatures": Counter(),
+                    "confidences": [],
+                    "layout_items": [],
+                    "guidance_samples": Counter(),
+                    "page_types": Counter(),
+                    "observations": 0,
+                },
+            )
+            to_node["observations"] += 1
+            to_node["node_names"][to_name] += 1
+            if thought_to:
+                to_node["layout_items"].append(thought_to)
+
+            # Register transition
+            key = (from_id, to_id)
+            transitions[key] += 1
+            detail = transition_details.setdefault(
+                key,
+                {
+                    "from": from_id,
+                    "to": to_id,
+                    "count": 0,
+                    "durations": [],
+                    "inferred_actions": Counter(),
+                    "target_candidates": [],
+                    "before_signatures": Counter(),
+                    "after_signatures": Counter(),
+                },
+            )
+            detail["count"] += 1
+            if action:
+                detail["inferred_actions"][action] += 1
+            # Estimate duration from frame indices (1 frame ≈ 1.5s)
+            duration_est = abs(frame_to - frame_from) * 1.5
+            if duration_est > 0:
+                detail["durations"].append(round(duration_est, 1))
+            if thought_from:
+                detail["before_signatures"][thought_from[:80]] += 1
+            if thought_to:
+                detail["after_signatures"][thought_to[:80]] += 1
+
+            ocr_event_count += 1  # Count recorded transitions as valid observations
+
         elif event_type == "manual_annotation":
             manual_annotations.append(
                 {
@@ -212,6 +327,9 @@ def build_session_candidate(events: List[dict]) -> dict:
                 "name": node["node_names"].most_common(1)[0][0]
                 if node["node_names"]
                 else node["node_id"],
+                "page_type": node["page_types"].most_common(1)[0][0]
+                if node["page_types"]
+                else "unknown",
                 "observations": node["observations"],
                 "avg_confidence": round(mean(confidences), 3) if confidences else 0,
                 "page_signatures": [
@@ -270,7 +388,9 @@ def build_session_candidate(events: List[dict]) -> dict:
 
     return {
         "candidate_id": f"{session_id}_{app}_{task}",
-        "source": "live_web_training",
+        "source": source,
+        "source_weight": SOURCE_WEIGHTS[source],
+        "capture_mode": capture_mode,
         "status": "pending_review",
         "generated_at": datetime.now().isoformat(),
         "session_id": session_id,
@@ -345,10 +465,159 @@ def build_aggregate(candidates: List[dict]) -> List[dict]:
     return aggregates
 
 
+def build_interaction_maps(candidates: List[dict]) -> List[dict]:
+    grouped: Dict[str, List[dict]] = defaultdict(list)
+    for candidate in candidates:
+        app = str(candidate.get("app") or "").strip()
+        if app:
+            grouped[app].append(candidate)
+
+    maps = []
+    for app, group in grouped.items():
+        node_evidence: Dict[str, dict] = {}
+        session_node_keys: Dict[Tuple[str, str], str] = {}
+
+        for candidate in group:
+            source = candidate.get("source", "unverified_web")
+            weight = SOURCE_WEIGHTS.get(source, 0.2)
+            session_id = candidate.get("session_id", "")
+            for node in candidate.get("nodes", []):
+                identity = normalized_identity(node.get("name"))
+                if not identity or identity in {"unknown", "当前页面"}:
+                    identity = normalized_identity(node.get("node_id"))
+                session_node_keys[(session_id, node.get("node_id", ""))] = identity
+                merged = node_evidence.setdefault(
+                    identity,
+                    {
+                        "node_key": identity,
+                        "names": Counter(),
+                        "page_types": Counter(),
+                        "observations": 0,
+                        "weighted_evidence": 0.0,
+                        "confidence_values": [],
+                        "source_counts": Counter(),
+                        "key_texts": Counter(),
+                        "guidance": Counter(),
+                    },
+                )
+                merged["names"][node.get("name") or node.get("node_id")] += 1
+                merged["page_types"][node.get("page_type", "unknown")] += 1
+                observations = max(1, int(node.get("observations") or 0))
+                merged["observations"] += observations
+                merged["weighted_evidence"] += observations * weight
+                merged["source_counts"][source] += observations
+                if isinstance(node.get("avg_confidence"), (int, float)):
+                    merged["confidence_values"].append(node["avg_confidence"])
+                for item in node.get("key_text_candidates", []):
+                    merged["key_texts"][item.get("text", "")] += int(item.get("count") or 1)
+                for item in node.get("guidance_samples", []):
+                    merged["guidance"][item.get("text", "")] += int(item.get("count") or 1)
+
+        edge_evidence: Dict[Tuple[str, str], dict] = {}
+        for candidate in group:
+            source = candidate.get("source", "unverified_web")
+            weight = SOURCE_WEIGHTS.get(source, 0.2)
+            session_id = candidate.get("session_id", "")
+            for edge in candidate.get("transitions", []):
+                src = session_node_keys.get((session_id, edge.get("from", "")))
+                dst = session_node_keys.get((session_id, edge.get("to", "")))
+                if not src or not dst or src == dst:
+                    continue
+                merged = edge_evidence.setdefault(
+                    (src, dst),
+                    {
+                        "from": src,
+                        "to": dst,
+                        "observations": 0,
+                        "weighted_evidence": 0.0,
+                        "source_counts": Counter(),
+                        "actions": Counter(),
+                    },
+                )
+                count = max(1, int(edge.get("count") or 0))
+                merged["observations"] += count
+                merged["weighted_evidence"] += count * weight
+                merged["source_counts"][source] += count
+                for item in edge.get("inferred_actions", []):
+                    merged["actions"][item.get("text", "")] += int(item.get("count") or 1)
+
+        nodes = []
+        for merged in node_evidence.values():
+            confidences = merged["confidence_values"]
+            nodes.append(
+                {
+                    "node_key": merged["node_key"],
+                    "name": merged["names"].most_common(1)[0][0],
+                    "page_type": merged["page_types"].most_common(1)[0][0],
+                    "status": "pending_review",
+                    "observations": merged["observations"],
+                    "weighted_evidence": round(merged["weighted_evidence"], 2),
+                    "avg_confidence": round(mean(confidences), 3) if confidences else 0,
+                    "source_counts": dict(merged["source_counts"]),
+                    "key_texts": [
+                        {"text": text, "count": count}
+                        for text, count in merged["key_texts"].most_common(30)
+                        if text
+                    ],
+                    "guidance_candidates": [
+                        {"text": text, "count": count}
+                        for text, count in merged["guidance"].most_common(8)
+                        if text
+                    ],
+                }
+            )
+
+        edges = []
+        for merged in edge_evidence.values():
+            edges.append(
+                {
+                    "from": merged["from"],
+                    "to": merged["to"],
+                    "status": "pending_review",
+                    "observations": merged["observations"],
+                    "weighted_evidence": round(merged["weighted_evidence"], 2),
+                    "source_counts": dict(merged["source_counts"]),
+                    "action_candidates": [
+                        {"text": text, "count": count}
+                        for text, count in merged["actions"].most_common(8)
+                        if text
+                    ],
+                }
+            )
+
+        maps.append(
+            {
+                "format_version": 1,
+                "map_id": f"{normalized_identity(app)}_candidate_map",
+                "app": app,
+                "status": "pending_review",
+                "generated_at": datetime.now().isoformat(),
+                "source_priority": list(SOURCE_WEIGHTS.keys()),
+                "source_sessions": [
+                    {
+                        "session_id": item.get("session_id"),
+                        "source": item.get("source"),
+                        "task": item.get("task"),
+                    }
+                    for item in group
+                ],
+                "nodes": sorted(nodes, key=lambda item: (-item["weighted_evidence"], item["node_key"])),
+                "edges": sorted(edges, key=lambda item: (-item["weighted_evidence"], item["from"], item["to"])),
+                "manual_annotations": [
+                    annotation
+                    for candidate in group
+                    for annotation in candidate.get("manual_annotations", [])
+                ][:1000],
+            }
+        )
+    return maps
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sessions-dir", type=Path, default=DEFAULT_SESSIONS_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--map-output-dir", type=Path)
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -368,6 +637,16 @@ def main() -> None:
     for aggregate in build_aggregate(candidates):
         out_path = args.output_dir / f"{aggregate['candidate_id']}.json"
         out_path.write_text(json.dumps(aggregate, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"wrote {out_path}")
+
+    map_output_dir = args.map_output_dir or args.output_dir.parent / "interaction_maps"
+    map_output_dir.mkdir(parents=True, exist_ok=True)
+    for interaction_map in build_interaction_maps(candidates):
+        out_path = map_output_dir / f"{interaction_map['map_id']}.json"
+        out_path.write_text(
+            json.dumps(interaction_map, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         print(f"wrote {out_path}")
 
     print(f"processed {len(candidates)} live training sessions")

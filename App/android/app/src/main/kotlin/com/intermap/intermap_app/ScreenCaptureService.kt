@@ -177,7 +177,7 @@ class ScreenCaptureService : Service() {
                 var bitmap: Bitmap? = null
                 try {
                     bitmap = imageToBitmap(image, width, height)
-                    val base64 = bitmapToBase64(bitmap, 65)
+                    val base64 = bitmapToBase64(bitmap, 90)
                     onFrameCaptured?.invoke(base64)
                 } catch (e: Exception) {
                     // 忽略偶发的帧处理错误
@@ -210,16 +210,21 @@ class ScreenCaptureService : Service() {
     }
 
     private fun bitmapToBase64(bitmap: Bitmap, quality: Int): String {
-        // 先缩小到一半宽度，减少传输量
-        val scaledWidth = bitmap.width / 2
-        val scaledHeight = bitmap.height / 2
-        val scaled = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        // 保留小数点、角标等细小 UI 文字；仅对超宽屏幕做有限缩放。
+        val maxWidth = 1200
+        val scaledWidth = if (bitmap.width > maxWidth) maxWidth else bitmap.width
+        val scaledHeight = bitmap.height * scaledWidth / bitmap.width
+        val scaled = if (scaledWidth == bitmap.width) {
+            bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        }
         return try {
             val outputStream = ByteArrayOutputStream()
             scaled.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
             Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
         } finally {
-            scaled.recycle()
+            if (scaled !== bitmap) scaled.recycle()
         }
     }
 

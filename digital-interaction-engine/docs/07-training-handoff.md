@@ -31,7 +31,7 @@ later from repeated paths and transition clusters.
 - Capture/event service:
   `/var/www/intermap-capture-server/capture_server.js`
 - Capture service process:
-  `pm2 restart intermap-capture`
+  `/var/www/intermap-capture-server/start.sh`
 - OCR API service:
   `/opt/intermap-api/api_server.py`
 - OCR API process:
@@ -40,6 +40,8 @@ later from repeated paths and transition clusters.
   `/var/www/intermap-data/training_sessions/`
 - Server review artifacts:
   `/var/www/intermap-data/review_queue/`
+- App-level candidate interaction maps:
+  `/var/www/intermap-data/interaction_maps/`
 
 Server-side training data is the source of truth. Do not require training data
 to sync back into the local project for the main workflow.
@@ -108,10 +110,17 @@ Important event types:
 - `ocr_error`
 - `session_end`
 
-On `session_end`, the capture service runs:
+Android sends these events as one idempotent `session_batch`. The batch requires
+the training password, replaces the same session rather than appending
+duplicates, and contains no screenshot or video. The App checkpoints the full
+session locally during capture, uploads automatically when training ends, and
+retries unfinished uploads after the next successful password verification.
+
+On `session_end` or `session_batch`, the capture service runs:
 
 ```bash
-python3 /var/www/intermap-capture-server/build_live_training_flows.py \
+/opt/miniconda3/envs/ocr/bin/python \
+  /var/www/intermap-capture-server/build_live_training_flows.py \
   --sessions-dir /var/www/intermap-data/training_sessions \
   --output-dir /var/www/intermap-data/review_queue
 ```
@@ -121,7 +130,20 @@ The output is:
 ```text
 /var/www/intermap-data/review_queue/<session>_<app>_app_exploration.json
 /var/www/intermap-data/review_queue/<app>_app_exploration_aggregate.json
+/var/www/intermap-data/interaction_maps/<app>_candidate_map.json
 ```
+
+The App-level candidate map merges all available sessions while preserving
+source counts. Evidence priority is:
+
+1. live Android accessibility;
+2. live Android screen capture;
+3. live web training;
+4. video-derived evidence;
+5. unverified web candidates.
+
+Candidate maps remain `pending_review`. They do not overwrite reviewed Golden
+Flow automatically.
 
 ## OCR And Cursor Alignment
 
@@ -247,7 +269,7 @@ curl -fsS https://loop-lulu.com/intermap/api/capture-health
 
 After each operator session:
 
-1. Confirm `session_end` was received.
+1. Confirm `session_end` or the Android `session_batch` receipt was received.
 2. Confirm the session candidate exists in server `review_queue`.
 3. Open the session candidate and inspect:
    - `quality.events`
@@ -321,12 +343,19 @@ fine-tuning any model.
 
 ## Current Known State
 
-As of 2026-07-08:
+As of 2026-07-30:
 
 - Live training data is stored on the server.
 - Server-side review queue generation is automatic on `session_end`.
 - PaddleOCR returns OCR boxes through `ocr_items`.
 - Frontend aligns cursor anchors with OCR boxes as `cursor_target`.
+- Android learning and goal-feedback sessions persist canonical events locally,
+  upload automatically, and retry after network failure.
+- Server-side App candidate maps merge old and new sessions without mixing
+  their source trust levels.
+- Screen navigation uses stable page identity and requires two consecutive
+  observations before announcing a new page.
+- Android screenshots and OCR preserve more resolution for decimal amounts.
 - Two Taobao exploration sessions exist on the server:
   - `web_mrc1j9zu_9255jg`
   - `web_mrc1vjtx_x4kz2a`
@@ -366,7 +395,10 @@ scp digital-interaction-engine/server/capture_server.js \
   digital-interaction-engine/scripts/build_live_training_flows.py \
   root@loop-lulu.com:/var/www/intermap-capture-server/
 ssh root@loop-lulu.com \
-  'chmod +x /var/www/intermap-capture-server/build_live_training_flows.py && pm2 restart intermap-capture'
+  'chmod +x /var/www/intermap-capture-server/build_live_training_flows.py && \
+   pkill -f "node capture_server.js" || true'
+ssh root@loop-lulu.com \
+  'cd /var/www/intermap-capture-server && nohup ./start.sh >/tmp/capture_server.log 2>&1 &'
 ```
 
 Deploy OCR API:

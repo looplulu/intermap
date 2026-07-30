@@ -60,7 +60,7 @@ def get_ocr_engine():
         det_db_thresh=0.2,          # lower threshold to catch small UI text
         det_db_box_thresh=0.3,     # lower box threshold for dense elements
         det_db_unclip_ratio=1.8,   # slightly larger boxes for better cursor hit
-        det_limit_side_len=960,    # reasonable limit for phone screenshots
+        det_limit_side_len=1600,   # preserve small decimal points in phone screenshots
         det_limit_type="max",      # scale up small images for better detection
         use_doc_orientation_classify=False,  # skip orientation to save CPU
         use_doc_unwarping=False,   # skip unwarping for speed

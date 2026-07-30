@@ -52,23 +52,29 @@ class TrainingEvent {
 class InferredNode {
   final String nodeId;
   final String pageType;
+  final String pageName;
   final List<String> keyTexts;
   final DateTime firstSeen;
+  double confidence;
   int visitCount;
 
   InferredNode({
     required this.nodeId,
     required this.pageType,
+    required this.pageName,
     required this.keyTexts,
     required this.firstSeen,
+    this.confidence = 0.0,
     this.visitCount = 1,
   });
 
   Map<String, dynamic> toJson() => {
     'node_id': nodeId,
     'page_type': pageType,
+    'page_name': pageName,
     'key_texts': keyTexts,
     'first_seen': firstSeen.toIso8601String(),
+    'confidence': confidence,
     'visit_count': visitCount,
   };
 }
@@ -88,10 +94,16 @@ class TrainingSessionManager {
   final List<TrainingEvent> _events = [];
   final List<InferredNode> _nodes = [];
   final List<Map<String, dynamic>> _annotations = [];
+  final List<Map<String, dynamic>> _canonicalEvents = [];
 
   String? _lastSignature;
   String? _currentNodeId;
-  int _nodeCounter = 0;
+  String? _previousNodeId;
+  String _captureMode = 'android_screen';
+  String _lastSuggestedAction = '';
+  int _eventSequence = 0;
+  Timer? _checkpointTimer;
+  bool _uploaded = false;
 
   void Function()? onStatusChange;
   void Function(String log)? onLog;
@@ -103,30 +115,53 @@ class TrainingSessionManager {
   String? get task => _task;
   List<TrainingEvent> get events => List.unmodifiable(_events);
   List<InferredNode> get nodes => List.unmodifiable(_nodes);
+  List<Map<String, dynamic>> get canonicalEvents =>
+      List.unmodifiable(_canonicalEvents);
   int get eventCount => _events.length;
   int get nodeCount => _nodes.length;
   int get annotationCount => _annotations.length;
   String? get currentNodeId => _currentNodeId;
 
-  void start({required String app, required String task}) {
+  void start({
+    required String app,
+    required String task,
+    String captureMode = 'android_screen',
+  }) {
     _app = app;
     _task = task;
+    _captureMode = captureMode;
     _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
     _status = TrainSessionStatus.recording;
     _startedAt = DateTime.now();
     _events.clear();
     _nodes.clear();
     _annotations.clear();
+    _canonicalEvents.clear();
     _lastSignature = null;
     _currentNodeId = null;
-    _nodeCounter = 0;
+    _previousNodeId = null;
+    _lastSuggestedAction = '';
+    _eventSequence = 0;
+    _uploaded = false;
+    _recordCanonical('session_start', {
+      'mode': task == 'free_exploration' ? 'learn' : 'goal_feedback',
+    });
+    _scheduleCheckpoint();
     onStatusChange?.call();
     _log('训练开始: $app - $task');
   }
 
   void stop() {
+    if (_status == TrainSessionStatus.completed) return;
     _status = TrainSessionStatus.completed;
     _endedAt = DateTime.now();
+    _recordCanonical('session_end', {
+      'event_count': _events.length,
+      'node_count': _nodes.length,
+      'annotation_count': _annotations.length,
+    });
+    _checkpointTimer?.cancel();
+    unawaited(saveToFile());
     onStatusChange?.call();
     _log('训练结束，共 ${_events.length} 个事件，${_nodes.length} 个节点');
   }
@@ -171,12 +206,23 @@ class TrainingSessionManager {
       isPageChange: isPageChange,
     );
     _events.add(te);
+    _recordCanonical('accessibility_observed', {
+      'event_type': event.eventType,
+      'package_name': event.packageName,
+      'text': event.text,
+      'view_id': event.viewId,
+      'ocr_texts': texts.take(40).toList(),
+      'page_signature': signature,
+      'is_page_change': isPageChange,
+    });
 
     if (isPageChange && signature.isNotEmpty) {
       _lastSignature = signature;
-      _inferNode(event, texts);
+      final node = _inferNode(event, texts);
+      _recordNodeObservation(node, signature, texts);
     }
 
+    _scheduleCheckpoint();
     _log('事件: ${event.eventTypeLabel} | ${event.packageName}');
   }
 
@@ -185,6 +231,9 @@ class TrainingSessionManager {
     required List<String> keyTexts,
     String action = '',
     String actionType = '',
+    String pageName = '',
+    double confidence = 0.0,
+    List<String> amounts = const [],
   }) {
     if (_status != TrainSessionStatus.recording) return;
 
@@ -209,17 +258,38 @@ class TrainingSessionManager {
       annotation: action.isEmpty ? null : action,
     );
     _events.add(event);
+    _recordCanonical('ocr_observed', {
+      'page_name': pageName,
+      'page_summary': pageSummary,
+      'ocr_texts': texts.take(40).toList(),
+      'page_signature': signature,
+      'suggested_action': action,
+      'action_type': actionType,
+      'confidence': confidence,
+      'amounts': amounts,
+    });
 
     if (isPageChange && signature.isNotEmpty) {
       _lastSignature = signature;
-      _inferScreenNode(texts, pageSummary);
+      final node = _inferScreenNode(
+        texts,
+        pageSummary,
+        pageName,
+        confidence,
+      );
+      _recordNodeObservation(node, signature, texts);
     }
 
+    if (action.isNotEmpty) _lastSuggestedAction = action;
+    _scheduleCheckpoint();
     final label = action.isEmpty ? pageSummary : action;
     _log('录屏观察: ${label.isEmpty ? "页面变化" : label}');
   }
 
-  void _inferNode(AccessibilityEventData event, List<String> texts) {
+  InferredNode _inferNode(
+    AccessibilityEventData event,
+    List<String> texts,
+  ) {
     final existing = _nodes.indexWhere((n) {
       // 简单匹配：关键文本高度重合
       final overlap = n.keyTexts.where((t) => texts.contains(t)).length;
@@ -230,17 +300,18 @@ class TrainingSessionManager {
       _nodes[existing].visitCount++;
       _currentNodeId = _nodes[existing].nodeId;
       onNodeChange?.call(_currentNodeId!);
-      return;
+      return _nodes[existing];
     }
 
-    _nodeCounter++;
-    final nodeId = '${_app ?? "unknown"}_${_task ?? "task"}_step$_nodeCounter';
     final keyTexts = texts.take(10).toList();
     final pageType = _inferPageType(keyTexts);
+    final pageName = _inferPageTypeLabel(pageType);
+    final nodeId = _stableNodeId(pageType, pageName, keyTexts);
 
     final node = InferredNode(
       nodeId: nodeId,
       pageType: pageType,
+      pageName: pageName,
       keyTexts: keyTexts,
       firstSeen: DateTime.now(),
     );
@@ -248,38 +319,122 @@ class TrainingSessionManager {
     _currentNodeId = nodeId;
     onNodeChange?.call(nodeId);
     _log('发现新节点: $nodeId ($pageType)');
+    return node;
   }
 
-  void _inferScreenNode(List<String> texts, String pageSummary) {
+  InferredNode _inferScreenNode(
+    List<String> texts,
+    String pageSummary,
+    String pageName,
+    double confidence,
+  ) {
     final existing = _nodes.indexWhere((n) {
       final overlap = n.keyTexts.where((t) => texts.contains(t)).length;
-      return overlap >= 2;
+      final sameName =
+          pageName.isNotEmpty &&
+          n.pageName.isNotEmpty &&
+          _normalizedText(pageName) == _normalizedText(n.pageName);
+      return sameName || overlap >= 2;
     });
 
     if (existing >= 0) {
       _nodes[existing].visitCount++;
+      if (confidence > _nodes[existing].confidence) {
+        _nodes[existing].confidence = confidence;
+      }
       _currentNodeId = _nodes[existing].nodeId;
       onNodeChange?.call(_currentNodeId!);
-      return;
+      return _nodes[existing];
     }
 
-    _nodeCounter++;
-    final nodeId = '${_app ?? "unknown"}_${_task ?? "task"}_step$_nodeCounter';
     final keyTexts = texts.take(10).toList();
     final pageType = _inferPageType(
       keyTexts.isEmpty ? [pageSummary] : keyTexts,
     );
+    final resolvedPageName = pageName.trim().isNotEmpty
+        ? pageName.trim()
+        : _inferPageTypeLabel(pageType);
+    final nodeId = _stableNodeId(pageType, resolvedPageName, keyTexts);
 
     final node = InferredNode(
       nodeId: nodeId,
       pageType: pageType,
+      pageName: resolvedPageName,
       keyTexts: keyTexts,
       firstSeen: DateTime.now(),
+      confidence: confidence,
     );
     _nodes.add(node);
     _currentNodeId = nodeId;
     onNodeChange?.call(nodeId);
     _log('发现录屏节点: $nodeId ($pageType)');
+    return node;
+  }
+
+  void _recordNodeObservation(
+    InferredNode node,
+    String signature,
+    List<String> texts,
+  ) {
+    _recordCanonical('node_located', {
+      'node_id': node.nodeId,
+      'node_name': node.pageName,
+      'page_type': node.pageType,
+      'page_signature': signature,
+      'confidence': node.confidence,
+      'guidance': _lastSuggestedAction,
+      'layout_items': texts
+          .take(30)
+          .map((text) => {'text': text})
+          .toList(),
+    });
+
+    if (_previousNodeId != null && _previousNodeId != node.nodeId) {
+      _recordCanonical('node_transition', {
+        'from_node_id': _previousNodeId,
+        'to_node_id': node.nodeId,
+        'inferred_action': _lastSuggestedAction,
+        'after_page_signature': signature,
+        'evidence': 'android_page_change',
+      });
+    }
+    _previousNodeId = node.nodeId;
+  }
+
+  String _stableNodeId(
+    String pageType,
+    String pageName,
+    List<String> texts,
+  ) {
+    final app = _normalizedText(_app ?? 'unknown');
+    final type = _normalizedText(pageType);
+    final name = _normalizedText(pageName);
+    final stableTexts = texts
+        .map(_normalizedText)
+        .where((text) => text.length >= 2)
+        .take(5)
+        .toList()
+      ..sort();
+    final identity = type != 'unknown' && type.isNotEmpty
+        ? '$type|$name'
+        : '$name|${stableTexts.join("|")}';
+    return '${app}_${type.isEmpty ? "page" : type}_${_fnv1a(identity)}';
+  }
+
+  String _normalizedText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'\d+(?:\.\d+)?'), '')
+        .replaceAll(RegExp(r'[^\u4e00-\u9fa5a-z]+'), '');
+  }
+
+  String _fnv1a(String value) {
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 
   String _inferPageType(List<String> texts) {
@@ -310,6 +465,16 @@ class TrainingSessionManager {
       'note': note,
     };
     _annotations.add(anno);
+    _recordCanonical('manual_annotation', {
+      'annotation_id': 'android_${_annotations.length}',
+      'node_id': _currentNodeId,
+      'annotation_timing': 'current_or_previous',
+      'action_text': action,
+      'target_text': target,
+      'target_type': targetType,
+      'note': note,
+    });
+    _scheduleCheckpoint();
     _log('人工标注已添加: $action -> $target');
     onStatusChange?.call();
   }
@@ -363,6 +528,28 @@ class TrainingSessionManager {
     }
   }
 
+  Map<String, dynamic> buildSnapshot() {
+    return {
+      'format_version': 2,
+      'session_id': _sessionId,
+      'app': _app,
+      'task': _task,
+      'capture_mode': _captureMode,
+      'started_at': _startedAt?.toIso8601String(),
+      'ended_at': _endedAt?.toIso8601String(),
+      'status': _status.name,
+      'upload_state': _uploaded ? 'uploaded' : 'pending',
+      'event_count': _events.length,
+      'node_count': _nodes.length,
+      'annotation_count': _annotations.length,
+      'events': _canonicalEvents,
+      'raw_observations': _events.map((e) => e.toJson()).toList(),
+      'inferred_nodes': _nodes.map((n) => n.toJson()).toList(),
+      'annotations': _annotations,
+      'candidate_flow': generateCandidateFlow(),
+    };
+  }
+
   Future<String> saveToFile() async {
     final dir = await getApplicationDocumentsDirectory();
     final folder = Directory('${dir.path}/training_sessions');
@@ -371,24 +558,72 @@ class TrainingSessionManager {
     final filename = '${_app ?? "unknown"}_${_task ?? "task"}_$_sessionId.json';
     final file = File('${folder.path}/$filename');
 
-    final data = {
-      'session_id': _sessionId,
-      'app': _app,
-      'task': _task,
-      'started_at': _startedAt?.toIso8601String(),
-      'ended_at': _endedAt?.toIso8601String(),
-      'event_count': _events.length,
-      'node_count': _nodes.length,
-      'annotation_count': _annotations.length,
-      'events': _events.map((e) => e.toJson()).toList(),
-      'inferred_nodes': _nodes.map((n) => n.toJson()).toList(),
-      'annotations': _annotations,
-      'candidate_flow': generateCandidateFlow(),
-    };
-
-    await file.writeAsString(json.encode(data));
+    await file.writeAsString(json.encode(buildSnapshot()), flush: true);
     _log('训练数据已保存: ${file.path}');
     return file.path;
+  }
+
+  static Future<List<File>> pendingSessionFiles() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory('${dir.path}/training_sessions');
+    if (!await folder.exists()) return [];
+    final files = await folder
+        .list()
+        .where((entity) => entity is File && entity.path.endsWith('.json'))
+        .cast<File>()
+        .toList();
+    final pending = <File>[];
+    for (final file in files) {
+      try {
+        final data =
+            json.decode(await file.readAsString()) as Map<String, dynamic>;
+        final events = data['events'];
+        if (data['upload_state'] != 'uploaded' &&
+            events is List &&
+            events.isNotEmpty) {
+          pending.add(file);
+        }
+      } catch (_) {}
+    }
+    return pending;
+  }
+
+  static Future<void> markFileUploaded(
+    File file,
+    Map<String, dynamic> serverReceipt,
+  ) async {
+    final data = json.decode(await file.readAsString()) as Map<String, dynamic>;
+    data['upload_state'] = 'uploaded';
+    data['uploaded_at'] = DateTime.now().toIso8601String();
+    data['server_receipt'] = serverReceipt;
+    await file.writeAsString(json.encode(data), flush: true);
+  }
+
+  void markUploaded() {
+    _uploaded = true;
+  }
+
+  void _recordCanonical(String eventType, Map<String, dynamic> payload) {
+    _eventSequence++;
+    _canonicalEvents.add({
+      'event_id': '${_sessionId}_$_eventSequence',
+      'session_id': _sessionId,
+      'event_type': eventType,
+      'timestamp': DateTime.now().toIso8601String(),
+      'app': _app,
+      'task': _task,
+      'capture_mode': _captureMode,
+      'frame_seq': _eventSequence,
+      'payload': payload,
+    });
+  }
+
+  void _scheduleCheckpoint() {
+    _checkpointTimer?.cancel();
+    _checkpointTimer = Timer(
+      const Duration(milliseconds: 800),
+      () => unawaited(saveToFile()),
+    );
   }
 
   void _log(String message) {
@@ -403,9 +638,13 @@ class TrainingSessionManager {
     _events.clear();
     _nodes.clear();
     _annotations.clear();
+    _canonicalEvents.clear();
     _lastSignature = null;
     _currentNodeId = null;
-    _nodeCounter = 0;
+    _previousNodeId = null;
+    _lastSuggestedAction = '';
+    _eventSequence = 0;
+    _checkpointTimer?.cancel();
     onStatusChange?.call();
   }
 }

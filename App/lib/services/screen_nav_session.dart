@@ -29,6 +29,7 @@ class ScreenNavSession {
   DateTime? _nodeEnterTime;
   int _stuckLevel = 0;
   GuidanceStyle _guidanceStyle = GuidanceStyle.concise;
+  final PageIdentityStabilizer _pageStabilizer = PageIdentityStabilizer();
 
   bool _isAnalyzing = false; // 防止并发 API 调用
   final List<Map<String, String>> _apiHistory = [];
@@ -65,6 +66,7 @@ class ScreenNavSession {
   void setGuidanceStyle(GuidanceStyle style) {
     _guidanceStyle = style;
     _lastSpokenText = '';
+    _pageStabilizer.reset();
     _lastSpokenTime = null;
   }
 
@@ -75,6 +77,7 @@ class ScreenNavSession {
     _currentGuidance = '';
     _lastSpokenText = '';
     _stuckLevel = 0;
+    _pageStabilizer.reset();
     _isComplete = false;
     _isNavigating = false;
 
@@ -142,8 +145,18 @@ class ScreenNavSession {
     final thought = result['thought']?.toString() ?? '';
     final action = result['action']?.toString() ?? '';
     final actionType = result['action_type']?.toString() ?? '';
+    final structuredPageName = result['page_name']?.toString().trim() ?? '';
+    final pageName = structuredPageName.isNotEmpty
+        ? structuredPageName
+        : GuidanceFormatter.extractPageName(thought);
+    final structuredPageKey = result['page_key']?.toString().trim() ?? '';
+    final pageKey = structuredPageKey.isNotEmpty
+        ? structuredPageKey
+        : GuidanceFormatter.normalizePageKey(
+            pageName.isNotEmpty ? pageName : thought,
+          );
 
-    _debug('API 结果: action="$action" type=$actionType');
+    _debug('API 结果: page="$pageName" action="$action" type=$actionType');
 
     // 构建引导文本
     final guidance = GuidanceFormatter.fromModel(
@@ -152,7 +165,11 @@ class ScreenNavSession {
       style: _guidanceStyle,
     );
 
-    // 更新历史
+    if (!_pageStabilizer.shouldAnnounce(pageKey)) {
+      _debug('页面身份未变化，保留当前引导');
+      return;
+    }
+
     if (action.isNotEmpty) {
       _apiHistory.insert(0, {'role': 'assistant', 'content': action});
       if (_apiHistory.length > 6) _apiHistory.removeLast();
@@ -235,6 +252,7 @@ class ScreenNavSession {
     _isComplete = false;
     _currentGuidance = '';
     _lastSpokenText = '';
+    _pageStabilizer.reset();
     _stuckLevel = 0;
     _nodeEnterTime = null;
     _apiHistory.clear();
