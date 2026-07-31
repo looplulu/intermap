@@ -24,6 +24,18 @@ class InteractionMapBuilderTest(unittest.TestCase):
             [
                 event(
                     "s1",
+                    "interaction_observed",
+                    {
+                        "node_id": "home-a",
+                        "action_type": "click",
+                        "target_text": "我",
+                        "target_view_id": "tab_profile",
+                        "is_clickable": True,
+                        "evidence": "android_accessibility_event",
+                    },
+                ),
+                event(
+                    "s1",
                     "node_located",
                     {
                         "node_id": "home-a",
@@ -51,6 +63,7 @@ class InteractionMapBuilderTest(unittest.TestCase):
                         "from_node_id": "home-a",
                         "to_node_id": "profile-a",
                         "inferred_action": "点击右下角的我",
+                        "action_source": "accessibility",
                     },
                 ),
             ]
@@ -103,6 +116,12 @@ class InteractionMapBuilderTest(unittest.TestCase):
             "点击右下角的我",
         )
         self.assertEqual(maps[0]["status"], "pending_review")
+        self.assertEqual(first["quality"]["interaction_observations"], 1)
+        self.assertEqual(first["interaction_observations"][0]["target_text"], "我")
+        self.assertEqual(
+            first["transitions"][0]["action_sources"][0]["source"],
+            "accessibility",
+        )
 
     def test_accessibility_source_has_highest_live_weight(self):
         candidate = build_session_candidate(

@@ -42,9 +42,15 @@ later from repeated paths and transition clusters.
   `/var/www/intermap-data/review_queue/`
 - App-level candidate interaction maps:
   `/var/www/intermap-data/interaction_maps/`
+- Demo navigation diagnostics:
+  `/var/www/intermap-data/navigation_diagnostics/<date>/`
 
 Server-side training data is the source of truth. Do not require training data
 to sync back into the local project for the main workflow.
+
+Demo diagnostics are separate from training data. They contain request status,
+latency, normalized page identity, action type, and guidance decisions. They do
+not contain screenshots, full OCR output, or the user's goal.
 
 ## Frontend Training Flow
 

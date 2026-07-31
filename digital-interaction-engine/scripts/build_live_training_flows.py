@@ -88,6 +88,7 @@ def build_session_candidate(events: List[dict]) -> dict:
     unresolved = []
     manual_annotations = []
     cursor_observations = []
+    interaction_observations = []
     ocr_event_count = 0
     frame_count = 0
 
@@ -129,6 +130,20 @@ def build_session_candidate(events: List[dict]) -> dict:
                         } if isinstance(target, dict) else None,
                     }
                 )
+
+        if event_type == "interaction_observed":
+            interaction_observations.append(
+                {
+                    "frame_seq": event.get("frame_seq"),
+                    "timestamp": event.get("timestamp"),
+                    "node_id": payload.get("node_id", ""),
+                    "action_type": payload.get("action_type", ""),
+                    "target_text": redact_text(payload.get("target_text", "")),
+                    "target_view_id": redact_text(payload.get("target_view_id", "")),
+                    "is_clickable": bool(payload.get("is_clickable", False)),
+                    "evidence": payload.get("evidence", ""),
+                }
+            )
 
         if event_type == "node_located":
             node_id = payload.get("node_id")
@@ -175,6 +190,7 @@ def build_session_candidate(events: List[dict]) -> dict:
                     "count": 0,
                     "durations": [],
                     "inferred_actions": Counter(),
+                    "action_sources": Counter(),
                     "target_candidates": [],
                     "before_signatures": Counter(),
                     "after_signatures": Counter(),
@@ -185,6 +201,8 @@ def build_session_candidate(events: List[dict]) -> dict:
                 detail["durations"].append(payload["duration_s"])
             if payload.get("inferred_action"):
                 detail["inferred_actions"][payload["inferred_action"]] += 1
+            if payload.get("action_source"):
+                detail["action_sources"][payload["action_source"]] += 1
             if payload.get("before_page_signature"):
                 detail["before_signatures"][payload["before_page_signature"]] += 1
             if payload.get("after_page_signature"):
@@ -279,6 +297,7 @@ def build_session_candidate(events: List[dict]) -> dict:
                     "count": 0,
                     "durations": [],
                     "inferred_actions": Counter(),
+                    "action_sources": Counter(),
                     "target_candidates": [],
                     "before_signatures": Counter(),
                     "after_signatures": Counter(),
@@ -357,6 +376,10 @@ def build_session_candidate(events: List[dict]) -> dict:
                     {"text": redact_text(text), "count": count}
                     for text, count in detail["inferred_actions"].most_common(5)
                 ],
+                "action_sources": [
+                    {"source": source, "count": count}
+                    for source, count in detail["action_sources"].most_common()
+                ],
                 "target_text_candidates": text_counter(detail["target_candidates"], limit=20),
                 "cursor_hints": (detail.get("cursor_hints") or [])[:10],
                 "cursor_targets": [
@@ -405,6 +428,7 @@ def build_session_candidate(events: List[dict]) -> dict:
             "unresolved_pages": len(unresolved),
             "manual_annotations": len(manual_annotations),
             "cursor_observations": len(cursor_observations),
+            "interaction_observations": len(interaction_observations),
         },
         "nodes": sorted(candidate_nodes, key=lambda n: n["node_id"]),
         "transitions": sorted(
@@ -413,6 +437,7 @@ def build_session_candidate(events: List[dict]) -> dict:
         ),
         "manual_annotations": manual_annotations[:200],
         "cursor_observations": cursor_observations[:200],
+        "interaction_observations": interaction_observations[:500],
         "unresolved_pages": unresolved[:100],
     }
 

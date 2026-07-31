@@ -269,9 +269,7 @@ class AppViewModel extends ChangeNotifier {
   void _onNavGuidance(String guidance, List<String> risks) {
     _currentGuidance = guidance;
     _currentRisks = risks;
-    final spoken = risks.isEmpty
-        ? guidance
-        : '$guidance。注意，${risks.first}';
+    final spoken = risks.isEmpty ? guidance : '$guidance。注意，${risks.first}';
     _tts.speak(spoken);
     notifyListeners();
   }
@@ -312,7 +310,7 @@ class AppViewModel extends ChangeNotifier {
     _trainManager.start(
       app: normalizedApp,
       task: normalizedTask,
-      captureMode: useA11y ? 'android_a11y' : 'android_screen',
+      captureMode: useA11y ? 'android_a11y_gui' : 'android_screen',
     );
 
     if (useA11y) {
@@ -321,33 +319,37 @@ class AppViewModel extends ChangeNotifier {
         _tts.speak('请先开启无障碍服务');
         return;
       }
-      _startA11yListening(navMode: false);
-      notifyListeners();
-      return;
     }
 
     _trainingApiHistory.clear();
     _trainingFrameDetector.reset();
     _screenTrainingAnalyzing = false;
-    _trainLog = '录屏训练启动中...\n$_trainLog';
+    _trainLog = useA11y
+        ? '无障碍 + GUI 联合训练启动中...\n$_trainLog'
+        : '录屏训练启动中...\n$_trainLog';
     notifyListeners();
 
     final granted = await _trainingCapture.requestPermission();
     if (!granted) {
+      if (useA11y) _a11yManager.stopListening();
       _trainManager.reset();
       _trainLog = '录屏训练启动失败（权限被拒绝）\n$_trainLog';
       _tts.speak('请先允许录屏权限');
       return;
     }
 
+    if (useA11y) {
+      _startA11yListening(navMode: false, moveToBackground: false);
+    }
+
     _tts.speak(
       mode == 'learn' ? '学习已开始，请正常操作抖音。' : '训练已开始，请按你的目标操作，我会记录页面和你的反馈。',
     );
+    try {
+      await _nativeChannel.invokeMethod('moveToBackground');
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 800));
     _trainingCapture.startListening(_onTrainingFrame);
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _nativeChannel.invokeMethod('moveToBackground');
-    });
     notifyListeners();
   }
 
@@ -383,9 +385,9 @@ class AppViewModel extends ChangeNotifier {
     final action = result['action']?.toString() ?? '';
     final actionType = result['action_type']?.toString() ?? '';
     final pageName = result['page_name']?.toString() ?? '';
-    final confidence =
-        (result['confidence'] as num?)?.toDouble() ?? 0.0;
-    final amounts = (result['amounts'] as List<dynamic>?)
+    final confidence = (result['confidence'] as num?)?.toDouble() ?? 0.0;
+    final amounts =
+        (result['amounts'] as List<dynamic>?)
             ?.map((item) => item.toString())
             .toList() ??
         const <String>[];
@@ -470,10 +472,7 @@ class AppViewModel extends ChangeNotifier {
       final file = File(await _trainManager.saveToFile());
       final snapshot =
           json.decode(await file.readAsString()) as Map<String, dynamic>;
-      final receipt = await _postTrainingSnapshot(
-        snapshot,
-        _trainingPassword,
-      );
+      final receipt = await _postTrainingSnapshot(snapshot, _trainingPassword);
       if (receipt == null) return false;
 
       _trainManager.markUploaded();
@@ -571,7 +570,10 @@ class AppViewModel extends ChangeNotifier {
   }
 
   /// ── 共享监听 ──
-  void _startA11yListening({required bool navMode}) {
+  void _startA11yListening({
+    required bool navMode,
+    bool moveToBackground = true,
+  }) {
     // 绑定调试日志，显示每个字段的解析详情
     _a11yManager.onDebugLog = (msg) {
       _debugLog = '$msg\n$_debugLog';
@@ -589,6 +591,9 @@ class AppViewModel extends ChangeNotifier {
         _debugLog =
             '[$time] ${event.eventTypeLabel} | ${event.packageName} | 文本(${event.windowTexts.length}): $texts\n$_debugLog';
       }
+      if (!navMode && (event.isClick || event.isScroll || event.isTextChange)) {
+        _trainManager.handleEvent(event);
+      }
       final lines = _debugLog.split('\n');
       if (lines.length > 50) _debugLog = lines.take(50).join('\n');
       notifyListeners();
@@ -596,7 +601,7 @@ class AppViewModel extends ChangeNotifier {
     _a11yManager.onPageEvent = (event) {
       if (navMode) {
         _navSession.handleAccessibilityEvent(event);
-      } else {
+      } else if (event.isPageChange) {
         _trainManager.handleEvent(event);
       }
     };
@@ -604,9 +609,11 @@ class AppViewModel extends ChangeNotifier {
     _a11yManager.startListening();
 
     // 延迟回到桌面，让用户操作目标App
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _nativeChannel.invokeMethod('moveToBackground');
-    });
+    if (moveToBackground) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _nativeChannel.invokeMethod('moveToBackground');
+      });
+    }
   }
 
   @override
@@ -700,7 +707,7 @@ class _ModeSelectPageState extends State<ModeSelectPage>
             ),
             const SizedBox(height: 8),
             Text(
-              '选择测试和训练链路',
+              '选择使用方式',
               style: TextStyle(color: Colors.grey[600], fontSize: 14),
             ),
             const SizedBox(height: 40),
@@ -708,14 +715,13 @@ class _ModeSelectPageState extends State<ModeSelectPage>
               icon: Icons.screenshot_monitor,
               iconBg: const Color(0xFFE3F2FD),
               iconColor: const Color(0xFF1565C0),
-              title: '录屏 GUI',
-              subtitle: '通过实时录屏识别抖音页面，做导航、学习和反馈训练',
+              title: '演示模式',
+              subtitle: '通过实时画面识别抖音页面，体验连续语音导航',
               onTap: () {
                 context.read<AppViewModel>().setNavMode('screen');
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) =>
-                        const CaptureModePage(captureMode: 'screen'),
+                    builder: (_) => const DemoModePage(captureMode: 'screen'),
                   ),
                 );
               },
@@ -726,7 +732,7 @@ class _ModeSelectPageState extends State<ModeSelectPage>
               iconBg: const Color(0xFFFCE4EC),
               iconColor: const Color(0xFFC62828),
               title: '无障碍',
-              subtitle: '读取控件树和事件流，和录屏同样做导航、学习和训练',
+              subtitle: '无障碍精确记录操作，配合 GUI 进行学习和训练',
               onTap: () {
                 context.read<AppViewModel>().setNavMode('a11y');
                 Navigator.of(context).push(
@@ -863,8 +869,8 @@ class _CaptureModePageState extends State<CaptureModePage>
       return const PermissionGuidePage();
     }
 
-    final title = _isA11y ? '无障碍链路' : '录屏 GUI 链路';
-    final subtitle = _isA11y ? '用控件树和事件流理解抖音操作' : '用实时画面理解抖音操作';
+    final title = _isA11y ? '无障碍' : '演示模式';
+    final subtitle = _isA11y ? '无障碍记录准确操作，GUI 同步理解完整页面' : '用实时画面理解抖音操作';
 
     return Scaffold(
       appBar: AppBar(title: Text(title), centerTitle: true),
@@ -883,28 +889,11 @@ class _CaptureModePageState extends State<CaptureModePage>
             Text(subtitle, style: TextStyle(color: Colors.grey[600])),
             const SizedBox(height: 36),
             _ModeCard(
-              icon: Icons.navigation,
-              iconBg: const Color(0xFFE3F2FD),
-              iconColor: const Color(0xFF1565C0),
-              title: '实际导航测试演示',
-              subtitle: '输入目标后切到抖音，小路根据页面实时语音引导',
-              onTap: () {
-                vm.setNavMode(widget.captureMode);
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        DemoModePage(captureMode: widget.captureMode),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            _ModeCard(
               icon: Icons.menu_book,
               iconBg: const Color(0xFFFFF3E0),
               iconColor: const Color(0xFFEF6C00),
               title: '我实际操作进行学习',
-              subtitle: '你自由操作抖音，小路记录页面变化、节点和人工标注',
+              subtitle: '自由操作抖音，同时采集准确点击和完整页面画面',
               onTap: () {
                 vm.setNavMode(widget.captureMode);
                 Navigator.of(context).push(
@@ -921,7 +910,7 @@ class _CaptureModePageState extends State<CaptureModePage>
               iconBg: const Color(0xFFE8EAF6),
               iconColor: const Color(0xFF3949AB),
               title: '我提出目标进行导航并反馈',
-              subtitle: '带目标训练，遇到不准的地方随时补人工反馈',
+              subtitle: '带目标操作，结合准确点击、GUI 识别和人工反馈',
               onTap: () {
                 vm.setNavMode(widget.captureMode);
                 Navigator.of(context).push(
@@ -1817,7 +1806,7 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
           children: [
             Text(widget.mode == 'learn' ? '学习模式' : '训练模式'),
             Text(
-              widget.useA11y ? '无障碍链路' : '录屏 GUI 链路',
+              widget.useA11y ? '无障碍 + GUI 联合采集' : '录屏 GUI 链路',
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
             ),
           ],
@@ -2169,7 +2158,7 @@ class _SetupForm extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            useA11y ? '当前采集：无障碍事件 + 人工标注' : '当前采集：录屏画面识别 + 人工标注',
+            useA11y ? '当前采集：准确点击事件 + GUI 页面识别 + 人工标注' : '当前采集：录屏画面识别 + 人工标注',
             style: TextStyle(color: Colors.grey[500], fontSize: 12),
           ),
         ],

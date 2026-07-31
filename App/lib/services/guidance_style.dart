@@ -10,13 +10,9 @@ enum GuidanceStyle {
 
 class PageIdentityStabilizer {
   String _stableKey = '';
-  String _candidateKey = '';
-  int _candidateCount = 0;
 
   void reset() {
     _stableKey = '';
-    _candidateKey = '';
-    _candidateCount = 0;
   }
 
   bool shouldAnnounce(String pageKey) {
@@ -26,22 +22,9 @@ class PageIdentityStabilizer {
       return true;
     }
     if (_samePage(_stableKey, key)) {
-      _candidateKey = '';
-      _candidateCount = 0;
       return false;
     }
-
-    if (_samePage(_candidateKey, key)) {
-      _candidateCount++;
-    } else {
-      _candidateKey = key;
-      _candidateCount = 1;
-    }
-    if (_candidateCount < 2) return false;
-
     _stableKey = key;
-    _candidateKey = '';
-    _candidateCount = 0;
     return true;
   }
 
@@ -92,15 +75,11 @@ class GuidanceFormatter {
         _extractField(
           combined,
           const ['操作', '动作', '建议'],
-          const ['页面名', '当前页面', '页面'],
+          const ['页面名', '当前页面', '页面', '关键文字', '金额'],
         ) ??
         _cleanAction(action.isNotEmpty ? action : thought);
 
-    return fromStructured(
-      page: page,
-      action: extractedAction,
-      style: style,
-    );
+    return fromStructured(page: page, action: extractedAction, style: style);
   }
 
   static String fromStructured({

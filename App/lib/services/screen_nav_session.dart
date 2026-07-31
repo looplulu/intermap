@@ -19,6 +19,7 @@ class ScreenNavSession {
   void Function()? _onComplete;
 
   String _task = '';
+  String _app = '';
   bool _isActive = false;
   bool _isNavigating = false;
   bool _isComplete = false;
@@ -33,6 +34,7 @@ class ScreenNavSession {
 
   bool _isAnalyzing = false; // 防止并发 API 调用
   final List<Map<String, String>> _apiHistory = [];
+  String _diagnosticSessionId = '';
 
   // 状态
   bool get isActive => _isActive;
@@ -72,7 +74,10 @@ class ScreenNavSession {
 
   /// 请求截屏权限并开始导航
   Future<bool> start({required String app, required String task}) async {
+    _app = app;
     _task = task;
+    _diagnosticSessionId =
+        'nav_${DateTime.now().millisecondsSinceEpoch.toString()}';
     _apiHistory.clear();
     _currentGuidance = '';
     _lastSpokenText = '';
@@ -95,14 +100,15 @@ class ScreenNavSession {
     _isNavigating = true;
     _notifyStatus();
 
-    _capture.startListening(_onFrame);
+    _sendDiagnostic('navigation_started', {'capture_mode': 'android_screen'});
 
-    // 延迟回到桌面（用 MethodChannel，不会销毁 Activity）
-    await Future.delayed(const Duration(milliseconds: 500));
+    // 先离开小路，再开始取帧，避免把导航状态页误认为目标 App。
     try {
       const channel = MethodChannel('com.intermap/app');
       await channel.invokeMethod('moveToBackground');
     } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 800));
+    _capture.startListening(_onFrame);
 
     return true;
   }
@@ -132,12 +138,18 @@ class ScreenNavSession {
 
     if (result == null) {
       _debug('API 返回 null');
+      _sendDiagnostic('api_error', {'error': 'null_response'});
       return;
     }
 
     final ok = result['ok'];
     if (ok != true) {
       _debug('API 识别失败: ${result['error']}');
+      _sendDiagnostic('api_error', {
+        'error': result['error']?.toString() ?? 'unknown',
+        'duration_ms': result['_duration_ms'] ?? 0,
+        'http_status': result['_http_status'] ?? 0,
+      });
       return;
     }
 
@@ -150,11 +162,10 @@ class ScreenNavSession {
         ? structuredPageName
         : GuidanceFormatter.extractPageName(thought);
     final structuredPageKey = result['page_key']?.toString().trim() ?? '';
-    final pageKey = structuredPageKey.isNotEmpty
-        ? structuredPageKey
-        : GuidanceFormatter.normalizePageKey(
-            pageName.isNotEmpty ? pageName : thought,
-          );
+    final normalizedPageName = GuidanceFormatter.normalizePageKey(pageName);
+    final pageKey = normalizedPageName.isNotEmpty
+        ? normalizedPageName
+        : structuredPageKey;
 
     _debug('API 结果: page="$pageName" action="$action" type=$actionType');
 
@@ -165,8 +176,22 @@ class ScreenNavSession {
       style: _guidanceStyle,
     );
 
+    _sendDiagnostic('api_result', {
+      'page_name': pageName,
+      'page_key': pageKey,
+      'action_type': actionType,
+      'duration_ms': result['_duration_ms'] ?? 0,
+      'http_status': result['_http_status'] ?? 200,
+      'confidence': result['confidence'] ?? 0,
+    });
+
     if (!_pageStabilizer.shouldAnnounce(pageKey)) {
       _debug('页面身份未变化，保留当前引导');
+      _sendDiagnostic('guidance_suppressed', {
+        'reason': 'same_page',
+        'page_name': pageName,
+        'page_key': pageKey,
+      });
       return;
     }
 
@@ -178,6 +203,11 @@ class ScreenNavSession {
     // 语音去重
     if (_isDuplicateSpeech(guidance)) {
       _debug('语音去重，跳过');
+      _sendDiagnostic('guidance_suppressed', {
+        'reason': 'similar_guidance',
+        'page_name': pageName,
+        'page_key': pageKey,
+      });
       return;
     }
 
@@ -190,6 +220,11 @@ class ScreenNavSession {
 
     _onGuidance?.call(guidance, []);
     _tts.speak(guidance);
+    _sendDiagnostic('guidance_announced', {
+      'page_name': pageName,
+      'page_key': pageKey,
+      'action_type': actionType,
+    });
     _debug('引导已输出: $guidance');
     _notifyStatus();
   }
@@ -279,6 +314,19 @@ class ScreenNavSession {
 
   void _debug(String msg) {
     _onDebugLog?.call('[${DateTime.now().toString().substring(11, 19)}] $msg');
+  }
+
+  void _sendDiagnostic(String eventType, Map<String, dynamic> payload) {
+    if (_diagnosticSessionId.isEmpty) return;
+    unawaited(
+      _api.sendDiagnostic({
+        'session_id': _diagnosticSessionId,
+        'event_type': eventType,
+        'timestamp': DateTime.now().toIso8601String(),
+        'app': _app.isEmpty ? 'douyin' : _app,
+        'payload': payload,
+      }),
+    );
   }
 
   void _notifyStatus() {

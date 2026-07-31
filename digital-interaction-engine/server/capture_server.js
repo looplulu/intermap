@@ -198,6 +198,53 @@ function storeSessionBatch(batch) {
   return summary;
 }
 
+function appendNavigationDiagnostic(input) {
+  const allowedTypes = new Set([
+    "navigation_started",
+    "api_error",
+    "api_result",
+    "guidance_suppressed",
+    "guidance_announced",
+  ]);
+  const eventType = String(input.event_type || "");
+  if (!allowedTypes.has(eventType)) throw new Error("invalid diagnostic event type");
+
+  const sessionId = safeId(input.session_id);
+  const day = new Date().toISOString().slice(0, 10);
+  const outputDir = path.join(DATA_DIR, "navigation_diagnostics", day);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const sourcePayload = input.payload && typeof input.payload === "object"
+    ? input.payload
+    : {};
+  const payload = {};
+  for (const key of [
+    "capture_mode",
+    "error",
+    "duration_ms",
+    "http_status",
+    "page_name",
+    "page_key",
+    "action_type",
+    "confidence",
+    "reason",
+  ]) {
+    if (sourcePayload[key] !== undefined) payload[key] = sourcePayload[key];
+  }
+  const event = redactEvent({
+    session_id: sessionId,
+    event_type: eventType,
+    timestamp: input.timestamp || new Date().toISOString(),
+    app: String(input.app || "douyin").slice(0, 40),
+    payload,
+  });
+  fs.appendFileSync(
+    path.join(outputDir, `${sessionId}.jsonl`),
+    JSON.stringify(event) + "\n",
+    "utf8"
+  );
+  return { session_id: sessionId, stored: true };
+}
+
 function buildReviewQueue() {
   if (buildInProgress) return;
   if (!fs.existsSync(BUILDER_SCRIPT)) return;
@@ -624,6 +671,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && (req.url === "/api/navigation-diagnostics" || req.url === "/navigation-diagnostics")) {
+    try {
+      const body = await readBody(req);
+      const diagnostic = JSON.parse(body);
+      const saved = appendNavigationDiagnostic(diagnostic);
+      sendJson(res, 200, { ok: true, ...saved });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   // GET /api/corrections — return recent train_step_corrected events
   if (req.method === "GET" && (req.url === "/api/corrections" || req.url === "/corrections")) {
     try {
@@ -843,6 +902,10 @@ const server = http.createServer(async (req, res) => {
           actionType = 'press_back';
         } else if (action.startsWith('press_home')) {
           actionType = 'press_home';
+        } else if (action.startsWith('open_app')) {
+          actionType = 'open_app';
+          const appMatch = action.match(/app_name='([^']*)'/);
+          if (appMatch) point = { app_name: appMatch[1] };
         } else if (action.startsWith('finished')) {
           actionType = 'finished';
           const contentMatch = action.match(/content='([^']*)'/);

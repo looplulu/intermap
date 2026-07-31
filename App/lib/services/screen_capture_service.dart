@@ -61,6 +61,8 @@ class ScreenCaptureManager {
 /// 复刻网页端 /intermap/api/ui-tars 端点
 class UiTarsClient {
   static const String _baseUrl = 'https://loop-lulu.com/intermap/api/ui-tars';
+  static const String _diagnosticUrl =
+      'https://loop-lulu.com/intermap/api/navigation-diagnostics';
 
   /// 调用 UI-TARS 分析屏幕截图
   /// 返回 API 的原始 JSON 响应
@@ -71,6 +73,7 @@ class UiTarsClient {
     int? imageHeight,
     List<Map<String, String>> history = const [],
   }) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final requestBody = <String, dynamic>{
         'image': 'data:image/jpeg;base64,$base64Image',
@@ -91,16 +94,41 @@ class UiTarsClient {
             headers: {'Content-Type': 'application/json'},
             body: body,
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 35));
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final result = jsonDecode(response.body) as Map<String, dynamic>;
+        result['_duration_ms'] = stopwatch.elapsedMilliseconds;
+        result['_http_status'] = response.statusCode;
+        return result;
       } else {
-        return {'ok': false, 'error': 'HTTP ${response.statusCode}'};
+        return {
+          'ok': false,
+          'error': 'HTTP ${response.statusCode}',
+          '_duration_ms': stopwatch.elapsedMilliseconds,
+          '_http_status': response.statusCode,
+        };
       }
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {
+        'ok': false,
+        'error': e.toString(),
+        '_duration_ms': stopwatch.elapsedMilliseconds,
+        '_http_status': 0,
+      };
     }
+  }
+
+  Future<void> sendDiagnostic(Map<String, dynamic> event) async {
+    try {
+      await http
+          .post(
+            Uri.parse(_diagnosticUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(event),
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
   }
 }
 

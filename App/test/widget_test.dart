@@ -12,12 +12,12 @@ void main() {
     expect(stabilizer.shouldAnnounce('douyinorderdetail'), isFalse);
   });
 
-  test('new page requires two consecutive observations', () {
+  test('new page announces on its first observation', () {
     final stabilizer = PageIdentityStabilizer();
 
     expect(stabilizer.shouldAnnounce('douyinhome'), isTrue);
-    expect(stabilizer.shouldAnnounce('refunddetail'), isFalse);
     expect(stabilizer.shouldAnnounce('refunddetail'), isTrue);
+    expect(stabilizer.shouldAnnounce('refunddetail'), isFalse);
   });
 
   test('training session records a page node and candidate flow', () {
@@ -41,6 +41,36 @@ void main() {
     expect(flow['task'], 'app_exploration');
   });
 
+  test('hybrid training preserves the exact accessibility click target', () {
+    final manager = TrainingSessionManager();
+    manager.start(
+      app: 'douyin',
+      task: 'free_exploration',
+      captureMode: 'android_a11y_gui',
+    );
+
+    manager.handleEvent(
+      AccessibilityEventData(
+        eventType: AccessibilityEventData.typeViewClicked,
+        packageName: 'com.ss.android.ugc.aweme',
+        text: '我的订单',
+        viewId: 'com.ss.android.ugc.aweme:id/order_entry',
+        isClickable: true,
+      ),
+    );
+
+    final interaction = manager.canonicalEvents.firstWhere(
+      (event) => event['event_type'] == 'interaction_observed',
+    );
+    final payload = interaction['payload'] as Map<String, dynamic>;
+    expect(payload['action_type'], 'click');
+    expect(payload['target_text'], '我的订单');
+    expect(
+      payload['target_view_id'],
+      'com.ss.android.ugc.aweme:id/order_entry',
+    );
+  });
+
   test('concise guidance removes page and operation labels', () {
     final guidance = GuidanceFormatter.fromModel(
       action: '页面名：个人主页，操作：点击右上角三个点',
@@ -59,5 +89,15 @@ void main() {
     );
 
     expect(guidance, '当前是抖音首页，点底部右下角的“我”，就会进入个人中心。');
+  });
+
+  test('guidance excludes key text and amount fields', () {
+    final guidance = GuidanceFormatter.fromModel(
+      action: '',
+      thought: '页面名：手机桌面\n操作：点击上方的抖音图标\n关键文字：抖音、小路\n金额：无',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(guidance, '点击上方的抖音图标。');
   });
 }

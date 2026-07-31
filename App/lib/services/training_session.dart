@@ -96,11 +96,13 @@ class TrainingSessionManager {
   final List<Map<String, dynamic>> _annotations = [];
   final List<Map<String, dynamic>> _canonicalEvents = [];
 
-  String? _lastSignature;
+  String? _lastAccessibilitySignature;
+  String? _lastScreenSignature;
   String? _currentNodeId;
   String? _previousNodeId;
   String _captureMode = 'android_screen';
   String _lastSuggestedAction = '';
+  String _lastActionSource = '';
   int _eventSequence = 0;
   Timer? _checkpointTimer;
   bool _uploaded = false;
@@ -137,10 +139,12 @@ class TrainingSessionManager {
     _nodes.clear();
     _annotations.clear();
     _canonicalEvents.clear();
-    _lastSignature = null;
+    _lastAccessibilitySignature = null;
+    _lastScreenSignature = null;
     _currentNodeId = null;
     _previousNodeId = null;
     _lastSuggestedAction = '';
+    _lastActionSource = '';
     _eventSequence = 0;
     _uploaded = false;
     _recordCanonical('session_start', {
@@ -190,10 +194,10 @@ class TrainingSessionManager {
         ? event.textSignature
         : texts.join('|');
     final isPageChange =
-        event.isPageChange ||
-        (_lastSignature != null &&
-            _lastSignature != signature &&
-            signature.isNotEmpty);
+        event.isPageChange &&
+        signature.isNotEmpty &&
+        (_lastAccessibilitySignature == null ||
+            _lastAccessibilitySignature != signature);
 
     final te = TrainingEvent(
       timestamp: DateTime.now(),
@@ -216,8 +220,39 @@ class TrainingSessionManager {
       'is_page_change': isPageChange,
     });
 
+    if (event.isClick || event.isScroll || event.isTextChange) {
+      final actionType = event.isClick
+          ? (event.eventType == AccessibilityEventData.typeViewLongClicked
+                ? 'long_press'
+                : 'click')
+          : event.isScroll
+          ? 'scroll'
+          : 'text_change';
+      final target = (event.text?.trim().isNotEmpty ?? false)
+          ? event.text!.trim()
+          : (event.viewId?.trim().isNotEmpty ?? false)
+          ? event.viewId!.trim()
+          : 'unknown_target';
+      _lastSuggestedAction = actionType == 'scroll'
+          ? '滚动页面'
+          : actionType == 'text_change'
+          ? '在$target输入内容'
+          : actionType == 'long_press'
+          ? '长按$target'
+          : '点击$target';
+      _lastActionSource = 'accessibility';
+      _recordCanonical('interaction_observed', {
+        'action_type': actionType,
+        'target_text': event.text,
+        'target_view_id': event.viewId,
+        'is_clickable': event.isClickable,
+        'node_id': _currentNodeId,
+        'evidence': 'android_accessibility_event',
+      });
+    }
+
     if (isPageChange && signature.isNotEmpty) {
-      _lastSignature = signature;
+      _lastAccessibilitySignature = signature;
       final node = _inferNode(event, texts);
       _recordNodeObservation(node, signature, texts);
     }
@@ -242,8 +277,8 @@ class TrainingSessionManager {
         : [pageSummary, action].where((t) => t.trim().isNotEmpty).toList();
     final signature = texts.take(8).join('|');
     final isPageChange =
-        _lastSignature == null ||
-        (_lastSignature != signature && signature.isNotEmpty);
+        signature.isNotEmpty &&
+        (_lastScreenSignature == null || _lastScreenSignature != signature);
 
     final event = TrainingEvent(
       timestamp: DateTime.now(),
@@ -270,26 +305,21 @@ class TrainingSessionManager {
     });
 
     if (isPageChange && signature.isNotEmpty) {
-      _lastSignature = signature;
-      final node = _inferScreenNode(
-        texts,
-        pageSummary,
-        pageName,
-        confidence,
-      );
+      _lastScreenSignature = signature;
+      final node = _inferScreenNode(texts, pageSummary, pageName, confidence);
       _recordNodeObservation(node, signature, texts);
     }
 
-    if (action.isNotEmpty) _lastSuggestedAction = action;
+    if (action.isNotEmpty && _lastActionSource != 'accessibility') {
+      _lastSuggestedAction = action;
+      _lastActionSource = 'gui_inference';
+    }
     _scheduleCheckpoint();
     final label = action.isEmpty ? pageSummary : action;
     _log('录屏观察: ${label.isEmpty ? "页面变化" : label}');
   }
 
-  InferredNode _inferNode(
-    AccessibilityEventData event,
-    List<String> texts,
-  ) {
+  InferredNode _inferNode(AccessibilityEventData event, List<String> texts) {
     final existing = _nodes.indexWhere((n) {
       // 简单匹配：关键文本高度重合
       final overlap = n.keyTexts.where((t) => texts.contains(t)).length;
@@ -383,10 +413,7 @@ class TrainingSessionManager {
       'page_signature': signature,
       'confidence': node.confidence,
       'guidance': _lastSuggestedAction,
-      'layout_items': texts
-          .take(30)
-          .map((text) => {'text': text})
-          .toList(),
+      'layout_items': texts.take(30).map((text) => {'text': text}).toList(),
     });
 
     if (_previousNodeId != null && _previousNodeId != node.nodeId) {
@@ -394,27 +421,27 @@ class TrainingSessionManager {
         'from_node_id': _previousNodeId,
         'to_node_id': node.nodeId,
         'inferred_action': _lastSuggestedAction,
+        'action_source': _lastActionSource,
         'after_page_signature': signature,
         'evidence': 'android_page_change',
       });
+      _lastSuggestedAction = '';
+      _lastActionSource = '';
     }
     _previousNodeId = node.nodeId;
   }
 
-  String _stableNodeId(
-    String pageType,
-    String pageName,
-    List<String> texts,
-  ) {
+  String _stableNodeId(String pageType, String pageName, List<String> texts) {
     final app = _normalizedText(_app ?? 'unknown');
     final type = _normalizedText(pageType);
     final name = _normalizedText(pageName);
-    final stableTexts = texts
-        .map(_normalizedText)
-        .where((text) => text.length >= 2)
-        .take(5)
-        .toList()
-      ..sort();
+    final stableTexts =
+        texts
+            .map(_normalizedText)
+            .where((text) => text.length >= 2)
+            .take(5)
+            .toList()
+          ..sort();
     final identity = type != 'unknown' && type.isNotEmpty
         ? '$type|$name'
         : '$name|${stableTexts.join("|")}';
@@ -639,10 +666,12 @@ class TrainingSessionManager {
     _nodes.clear();
     _annotations.clear();
     _canonicalEvents.clear();
-    _lastSignature = null;
+    _lastAccessibilitySignature = null;
+    _lastScreenSignature = null;
     _currentNodeId = null;
     _previousNodeId = null;
     _lastSuggestedAction = '';
+    _lastActionSource = '';
     _eventSequence = 0;
     _checkpointTimer?.cancel();
     onStatusChange?.call();
