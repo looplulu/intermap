@@ -201,6 +201,7 @@ function storeSessionBatch(batch) {
 function appendNavigationDiagnostic(input) {
   const allowedTypes = new Set([
     "navigation_started",
+    "local_ocr_result",
     "api_error",
     "api_result",
     "guidance_suppressed",
@@ -227,6 +228,7 @@ function appendNavigationDiagnostic(input) {
     "action_type",
     "confidence",
     "reason",
+    "ocr_count",
   ]) {
     if (sourcePayload[key] !== undefined) payload[key] = sourcePayload[key];
   }

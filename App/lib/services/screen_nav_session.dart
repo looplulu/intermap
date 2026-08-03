@@ -39,6 +39,7 @@ class ScreenNavSession {
   String? _pendingFastFrame;
   String? _pendingCloudFrame;
   DateTime? _lastLocalMatchedAt;
+  bool _reportedLocalOcr = false;
   FastNavigationResolver? _fastResolver;
   final List<Map<String, String>> _apiHistory = [];
   String _diagnosticSessionId = '';
@@ -98,6 +99,7 @@ class ScreenNavSession {
     _pendingFastFrame = null;
     _pendingCloudFrame = null;
     _lastLocalMatchedAt = null;
+    _reportedLocalOcr = false;
 
     _debug('请求截屏权限...');
     _notifyStatus();
@@ -142,12 +144,27 @@ class ScreenNavSession {
       while (_pendingFastFrame != null && _isActive && !_isComplete) {
         final frame = _pendingFastFrame!;
         _pendingFastFrame = null;
+        var cloudStarted = false;
+        final cloudFallback = Timer(const Duration(milliseconds: 700), () {
+          cloudStarted = true;
+          _queueCloudAnalysis(frame);
+        });
         final result = await _localOcr.recognize(frame);
+        cloudFallback.cancel();
         final texts =
             (result?['texts'] as List<dynamic>?)
                 ?.map((item) => item.toString())
                 .toList() ??
             const <String>[];
+        final ocrOk = result?['ok'] == true;
+        if (!_reportedLocalOcr || !ocrOk) {
+          _reportedLocalOcr = ocrOk;
+          _sendDiagnostic('local_ocr_result', {
+            'duration_ms': result?['duration_ms'] ?? 0,
+            'ocr_count': texts.length,
+            if (!ocrOk) 'error': result?['error']?.toString() ?? 'unknown',
+          });
+        }
         final decision = _fastResolver?.resolve(
           texts: texts,
           app: _app,
@@ -162,7 +179,7 @@ class ScreenNavSession {
             (result?['duration_ms'] as num?)?.toInt() ?? 0,
           );
         } else {
-          _queueCloudAnalysis(frame);
+          if (!cloudStarted) _queueCloudAnalysis(frame);
         }
       }
     } finally {

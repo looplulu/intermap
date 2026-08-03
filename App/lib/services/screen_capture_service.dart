@@ -138,15 +138,26 @@ class OnDeviceOcrClient {
   static const _channel = MethodChannel('com.intermap/vision');
 
   Future<Map<String, dynamic>?> recognize(String base64Image) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final result = await _channel
           .invokeMapMethod<String, dynamic>('recognizeText', {
             'imageBase64': base64Image,
           })
-          .timeout(const Duration(milliseconds: 1500));
-      return result == null ? null : Map<String, dynamic>.from(result);
-    } catch (_) {
-      return null;
+          .timeout(const Duration(seconds: 5));
+      return result == null
+          ? {
+              'ok': false,
+              'error': 'empty_result',
+              'duration_ms': stopwatch.elapsedMilliseconds,
+            }
+          : Map<String, dynamic>.from(result);
+    } catch (error) {
+      return {
+        'ok': false,
+        'error': error.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      };
     }
   }
 }

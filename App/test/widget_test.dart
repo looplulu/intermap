@@ -129,4 +129,32 @@ void main() {
 
     expect(decision, isNull);
   });
+
+  test('fast navigation uses verified Douyin profile correction', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['抖音号：123456', '获赞', '关注', '粉丝', '我的订单'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision?.pageKey, 'douyin_profile');
+    expect(decision?.guidance, '点页面中间左侧的“我的订单”。');
+  });
+
+  test('fast navigation uses verified all-orders correction', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['全部订单', '待付款', '待发货', '待收货'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision?.pageKey, 'douyin_all_orders');
+    expect(decision?.guidance, '选择你要退款的商品。');
+  });
 }
