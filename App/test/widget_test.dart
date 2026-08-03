@@ -157,4 +157,18 @@ void main() {
     expect(decision?.pageKey, 'douyin_all_orders');
     expect(decision?.guidance, '选择你要退款的商品。');
   });
+
+  test('fast navigation handles instant refund without cloud analysis', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['极速退款', '退款金额 49.8', '提交申请'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision?.pageKey, 'douyin_instant_refund');
+    expect(decision?.guidance, '确认退款信息后，点底部的“提交申请”。');
+  });
 }

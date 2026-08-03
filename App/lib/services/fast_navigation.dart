@@ -86,6 +86,16 @@ class FastNavigationResolver {
       );
     }
 
+    if (fullText.contains('极速退款') &&
+        (fullText.contains('提交申请') || fullText.contains('申请退款'))) {
+      return decision(
+        pageKey: 'douyin_instant_refund',
+        pageName: '极速退款申请页',
+        page: '当前是极速退款申请页。',
+        action: '确认退款信息后，点底部的“提交申请”。',
+      );
+    }
+
     if (fullText.contains('申请退款') &&
         (fullText.contains('订单详情') || fullText.contains('待发货'))) {
       return decision(

@@ -92,7 +92,7 @@ class AccessibilityServiceManager {
 
   void _debounceEvent() {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 120), () {
       if (_eventBuffer.isEmpty) return;
       final pageChange = _eventBuffer.lastWhere(
         (e) => e.isPageChange,

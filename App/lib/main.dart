@@ -196,7 +196,15 @@ class AppViewModel extends ChangeNotifier {
     _currentRisks = [];
 
     if (_navMode == 'screen') {
-      // 录屏模式
+      await checkPermissions();
+      if (!_a11yGranted) {
+        _debugLog = '极速导航需要先开启无障碍权限。\n';
+        notifyListeners();
+        await requestAccessibility();
+        return;
+      }
+
+      // 无障碍事件负责即时导航，GUI 录屏负责未知页面兜底。
       _screenNavActive = true;
       _screenNavNavigating = false;
       _screenNavComplete = false;
@@ -210,8 +218,9 @@ class AppViewModel extends ChangeNotifier {
 
       final ok = await _screenNavSession.start(app: app, task: task);
       if (ok) {
+        _startA11yListening(navMode: true, moveToBackground: false);
         _screenNavNavigating = true;
-        _debugLog = '录屏导航已启动，正在监听屏幕...\n$_debugLog';
+        _debugLog = '极速导航已启动，正在监听页面...\n$_debugLog';
       } else {
         _screenNavActive = false;
         _stuckTimer?.cancel();
@@ -239,6 +248,7 @@ class AppViewModel extends ChangeNotifier {
   void stopNavigation() async {
     _stuckTimer?.cancel();
     if (_navMode == 'screen') {
+      _a11yManager.stopListening();
       await _screenNavSession.stop();
       _screenNavComplete = true;
     } else {
@@ -601,7 +611,11 @@ class AppViewModel extends ChangeNotifier {
     };
     _a11yManager.onPageEvent = (event) {
       if (navMode) {
-        _navSession.handleAccessibilityEvent(event);
+        if (_navMode == 'screen') {
+          _screenNavSession.handleAccessibilityEvent(event);
+        } else {
+          _navSession.handleAccessibilityEvent(event);
+        }
       } else if (event.isPageChange) {
         _trainManager.handleEvent(event);
       }

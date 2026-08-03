@@ -67,10 +67,9 @@ After each self-contained milestone, upload a source snapshot to:
 https://github.com/looplulu/intermap
 ```
 
-Use the current version number in the backup name. Keep only the latest two
-backup versions on GitHub: the newest milestone and the immediately previous
-milestone. After a new backup is confirmed, delete backup branches and tags
-older than those two. Recommended naming:
+Use the current version number in the backup name. Keep every milestone backup
+on GitHub permanently. Never automatically delete an older snapshot branch or
+tag. Recommended naming:
 
 - branch: `snapshot/xiaolu-<version>`
 - tag: `xiaolu-<version>`

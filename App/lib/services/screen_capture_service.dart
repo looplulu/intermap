@@ -134,34 +134,6 @@ class UiTarsClient {
   }
 }
 
-class OnDeviceOcrClient {
-  static const _channel = MethodChannel('com.intermap/vision');
-
-  Future<Map<String, dynamic>?> recognize(String base64Image) async {
-    final stopwatch = Stopwatch()..start();
-    try {
-      final result = await _channel
-          .invokeMapMethod<String, dynamic>('recognizeText', {
-            'imageBase64': base64Image,
-          })
-          .timeout(const Duration(seconds: 5));
-      return result == null
-          ? {
-              'ok': false,
-              'error': 'empty_result',
-              'duration_ms': stopwatch.elapsedMilliseconds,
-            }
-          : Map<String, dynamic>.from(result);
-    } catch (error) {
-      return {
-        'ok': false,
-        'error': error.toString(),
-        'duration_ms': stopwatch.elapsedMilliseconds,
-      };
-    }
-  }
-}
-
 /// 画面变化检测器
 /// 通过帧哈希快速判断屏幕是否有变化，避免重复 API 调用
 class FrameChangeDetector {

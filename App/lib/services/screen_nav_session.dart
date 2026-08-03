@@ -5,13 +5,13 @@ import 'tts_service.dart';
 import 'hd_map.dart';
 import 'guidance_style.dart';
 import 'fast_navigation.dart';
+import '../models/accessibility_event.dart';
 
 /// 录屏模式导航会话
 /// 截屏 → 帧变化检测 → UI-TARS API 识别 → 生成引导
 class ScreenNavSession {
   final ScreenCaptureManager _capture = ScreenCaptureManager();
   final UiTarsClient _api = UiTarsClient();
-  final OnDeviceOcrClient _localOcr = OnDeviceOcrClient();
   final FrameChangeDetector _changeDetector = FrameChangeDetector();
   TTSService _tts;
 
@@ -35,11 +35,8 @@ class ScreenNavSession {
   final PageIdentityStabilizer _pageStabilizer = PageIdentityStabilizer();
 
   bool _isAnalyzing = false; // 防止并发 API 调用
-  bool _isFastAnalyzing = false;
-  String? _pendingFastFrame;
   String? _pendingCloudFrame;
   DateTime? _lastLocalMatchedAt;
-  bool _reportedLocalOcr = false;
   FastNavigationResolver? _fastResolver;
   final List<Map<String, String>> _apiHistory = [];
   String _diagnosticSessionId = '';
@@ -95,11 +92,8 @@ class ScreenNavSession {
     _isComplete = false;
     _isNavigating = false;
     _isAnalyzing = false;
-    _isFastAnalyzing = false;
-    _pendingFastFrame = null;
     _pendingCloudFrame = null;
     _lastLocalMatchedAt = null;
-    _reportedLocalOcr = false;
 
     _debug('请求截屏权限...');
     _notifyStatus();
@@ -133,58 +127,26 @@ class ScreenNavSession {
     if (!_isActive || _isComplete) return;
     if (!_changeDetector.shouldAnalyze(base64Frame)) return;
 
-    _pendingFastFrame = base64Frame;
-    _drainFastFrames();
+    _queueCloudAnalysis(base64Frame);
   }
 
-  Future<void> _drainFastFrames() async {
-    if (_isFastAnalyzing) return;
-    _isFastAnalyzing = true;
-    try {
-      while (_pendingFastFrame != null && _isActive && !_isComplete) {
-        final frame = _pendingFastFrame!;
-        _pendingFastFrame = null;
-        var cloudStarted = false;
-        final cloudFallback = Timer(const Duration(milliseconds: 700), () {
-          cloudStarted = true;
-          _queueCloudAnalysis(frame);
-        });
-        final result = await _localOcr.recognize(frame);
-        cloudFallback.cancel();
-        final texts =
-            (result?['texts'] as List<dynamic>?)
-                ?.map((item) => item.toString())
-                .toList() ??
-            const <String>[];
-        final ocrOk = result?['ok'] == true;
-        if (!_reportedLocalOcr || !ocrOk) {
-          _reportedLocalOcr = ocrOk;
-          _sendDiagnostic('local_ocr_result', {
-            'duration_ms': result?['duration_ms'] ?? 0,
-            'ocr_count': texts.length,
-            if (!ocrOk) 'error': result?['error']?.toString() ?? 'unknown',
-          });
-        }
-        final decision = _fastResolver?.resolve(
-          texts: texts,
-          app: _app,
-          task: _task,
-          style: _guidanceStyle,
-        );
-        if (decision != null) {
-          _lastLocalMatchedAt = DateTime.now();
-          _pendingCloudFrame = null;
-          _handleFastDecision(
-            decision,
-            (result?['duration_ms'] as num?)?.toInt() ?? 0,
-          );
-        } else {
-          if (!cloudStarted) _queueCloudAnalysis(frame);
-        }
-      }
-    } finally {
-      _isFastAnalyzing = false;
-    }
+  void handleAccessibilityEvent(AccessibilityEventData event) {
+    if (!_isActive || _isComplete || event.windowTexts.isEmpty) return;
+    final startedAt = DateTime.now();
+    final decision = _fastResolver?.resolve(
+      texts: event.windowTexts,
+      app: _app,
+      task: _task,
+      style: _guidanceStyle,
+    );
+    if (decision == null) return;
+
+    _lastLocalMatchedAt = DateTime.now();
+    _pendingCloudFrame = null;
+    _handleFastDecision(
+      decision,
+      DateTime.now().difference(startedAt).inMilliseconds,
+    );
   }
 
   void _handleFastDecision(FastNavigationDecision decision, int durationMs) {
@@ -285,7 +247,11 @@ class ScreenNavSession {
       style: _guidanceStyle,
     );
 
-    if (_lastLocalMatchedAt?.isAfter(startedAt) == true) {
+    final recentLocalMatch =
+        _lastLocalMatchedAt != null &&
+        DateTime.now().difference(_lastLocalMatchedAt!) <
+            const Duration(seconds: 10);
+    if (_lastLocalMatchedAt?.isAfter(startedAt) == true || recentLocalMatch) {
       _debug('云端结果已过时，本地已识别更新页面');
       _sendDiagnostic('guidance_suppressed', {
         'reason': 'stale_cloud_result',
@@ -395,7 +361,6 @@ class ScreenNavSession {
     _isNavigating = false;
     _isComplete = true;
     _changeDetector.reset();
-    _pendingFastFrame = null;
     _pendingCloudFrame = null;
     _notifyStatus();
   }
@@ -413,7 +378,6 @@ class ScreenNavSession {
     _nodeEnterTime = null;
     _apiHistory.clear();
     _changeDetector.reset();
-    _pendingFastFrame = null;
     _pendingCloudFrame = null;
     _notifyStatus();
   }
