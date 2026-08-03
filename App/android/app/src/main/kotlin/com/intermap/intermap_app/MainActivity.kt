@@ -3,13 +3,20 @@ package com.intermap.intermap_app
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import android.util.Base64
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -19,6 +26,7 @@ import java.util.Locale
 class MainActivity : FlutterActivity() {
     private val APP_CHANNEL = "com.intermap/app"
     private val CAPTURE_EVENT_CHANNEL = "com.intermap/capture_event"
+    private val VISION_CHANNEL = "com.intermap/vision"
 
     private val REQUEST_CODE_SCREEN_CAPTURE = 2001
     private var pendingResult: MethodChannel.Result? = null
@@ -27,6 +35,10 @@ class MainActivity : FlutterActivity() {
     private var nativeTts: TextToSpeech? = null
     private var nativeTtsReady = false
     private val pendingTtsTexts = mutableListOf<Triple<String, Float, Float>>()
+    private val textRecognizerDelegate = lazy {
+        TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    }
+    private val textRecognizer: TextRecognizer by textRecognizerDelegate
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -79,6 +91,58 @@ class MainActivity : FlutterActivity() {
                     ScreenCaptureService.onFrameCaptured = null
                 }
             })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VISION_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "recognizeText" -> recognizeText(
+                        call.argument<String>("imageBase64").orEmpty(),
+                        result
+                    )
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun recognizeText(base64Image: String, result: MethodChannel.Result) {
+        if (base64Image.isBlank()) {
+            result.error("empty_image", "imageBase64 is required", null)
+            return
+        }
+        val bitmap = try {
+            val bytes = Base64.decode(base64Image, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (error: Exception) {
+            null
+        }
+        if (bitmap == null) {
+            result.error("decode_failed", "Unable to decode screenshot", null)
+            return
+        }
+
+        val startedAt = SystemClock.elapsedRealtime()
+        textRecognizer.process(InputImage.fromBitmap(bitmap, 0))
+            .addOnSuccessListener { recognized ->
+                val lines = recognized.textBlocks
+                    .flatMap { block -> block.lines }
+                    .map { line -> line.text.trim() }
+                    .filter { text -> text.isNotEmpty() }
+                    .distinct()
+                    .take(120)
+                result.success(
+                    mapOf(
+                        "ok" to true,
+                        "texts" to lines,
+                        "duration_ms" to (SystemClock.elapsedRealtime() - startedAt)
+                    )
+                )
+            }
+            .addOnFailureListener { error ->
+                result.error("ocr_failed", error.message, null)
+            }
+            .addOnCompleteListener {
+                bitmap.recycle()
+            }
     }
 
     private fun requestScreenCapture() {
@@ -196,6 +260,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        if (textRecognizerDelegate.isInitialized()) {
+            textRecognizer.close()
+        }
         nativeTts?.stop()
         nativeTts?.shutdown()
         nativeTts = null

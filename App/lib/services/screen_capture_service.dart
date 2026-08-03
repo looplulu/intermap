@@ -69,6 +69,7 @@ class UiTarsClient {
   Future<Map<String, dynamic>?> analyze({
     required String base64Image,
     required String task,
+    bool includeOcrEvidence = false,
     int? imageWidth,
     int? imageHeight,
     List<Map<String, String>> history = const [],
@@ -79,6 +80,7 @@ class UiTarsClient {
         'image': 'data:image/jpeg;base64,$base64Image',
         'task': '用户的目标是: "$task"。请识别当前页面，判断用户在完成目标过程中的哪一步。',
         'history': history,
+        'include_ocr_evidence': includeOcrEvidence,
       };
       if (imageWidth != null) {
         requestBody['image_width'] = imageWidth;
@@ -132,6 +134,23 @@ class UiTarsClient {
   }
 }
 
+class OnDeviceOcrClient {
+  static const _channel = MethodChannel('com.intermap/vision');
+
+  Future<Map<String, dynamic>?> recognize(String base64Image) async {
+    try {
+      final result = await _channel
+          .invokeMapMethod<String, dynamic>('recognizeText', {
+            'imageBase64': base64Image,
+          })
+          .timeout(const Duration(milliseconds: 1500));
+      return result == null ? null : Map<String, dynamic>.from(result);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 /// 画面变化检测器
 /// 通过帧哈希快速判断屏幕是否有变化，避免重复 API 调用
 class FrameChangeDetector {
@@ -143,7 +162,7 @@ class FrameChangeDetector {
   DateTime? get lastAnalyzeTime => _lastAnalyzeTime;
 
   FrameChangeDetector({Duration? minInterval})
-    : _minInterval = minInterval ?? const Duration(milliseconds: 1500);
+    : _minInterval = minInterval ?? const Duration(milliseconds: 500);
 
   /// 判断是否需要分析新帧
   /// 返回 true 表示画面有变化且距上次分析已过间隔

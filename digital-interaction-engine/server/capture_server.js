@@ -756,7 +756,12 @@ const server = http.createServer(async (req, res) => {
       const history = data.history || []; // array of previous messages [{role, content}]
       const imageWidth = data.image_width || 0;
       const imageHeight = data.image_height || 0;
-      const ocrEvidence = await getOcrEvidence(imageData);
+      // Demo navigation must stay responsive. Training explicitly opts in to
+      // the slower server OCR pass when it needs archival evidence.
+      const includeOcrEvidence = data.include_ocr_evidence === true;
+      const ocrEvidence = includeOcrEvidence
+        ? await getOcrEvidence(imageData)
+        : { texts: [], items: [] };
       const ocrTexts = ocrEvidence.texts;
       const amounts = extractAmounts(ocrTexts);
 

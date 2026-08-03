@@ -36,7 +36,7 @@ class ScreenCaptureService : Service() {
         /** 截屏回调，通过静态变量让 MainActivity 传递给 EventChannel */
         var onFrameCaptured: ((String) -> Unit)? = null
 
-        private const val MIN_FRAME_INTERVAL_MS = 1000L
+        private const val MIN_FRAME_INTERVAL_MS = 500L
 
         @Volatile
         var isRunning = false
@@ -177,7 +177,7 @@ class ScreenCaptureService : Service() {
                 var bitmap: Bitmap? = null
                 try {
                     bitmap = imageToBitmap(image, width, height)
-                    val base64 = bitmapToBase64(bitmap, 90)
+                    val base64 = bitmapToBase64(bitmap, 82)
                     onFrameCaptured?.invoke(base64)
                 } catch (e: Exception) {
                     // 忽略偶发的帧处理错误
@@ -211,7 +211,7 @@ class ScreenCaptureService : Service() {
 
     private fun bitmapToBase64(bitmap: Bitmap, quality: Int): String {
         // 保留小数点、角标等细小 UI 文字；仅对超宽屏幕做有限缩放。
-        val maxWidth = 1200
+        val maxWidth = 900
         val scaledWidth = if (bitmap.width > maxWidth) maxWidth else bitmap.width
         val scaledHeight = bitmap.height * scaledWidth / bitmap.width
         val scaled = if (scaledWidth == bitmap.width) {

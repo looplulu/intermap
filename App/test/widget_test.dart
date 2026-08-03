@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intermap_app/models/accessibility_event.dart';
 import 'package:intermap_app/services/guidance_style.dart';
+import 'package:intermap_app/services/fast_navigation.dart';
+import 'package:intermap_app/services/hd_map.dart';
 import 'package:intermap_app/services/training_session.dart';
 
 void main() {
@@ -99,5 +101,32 @@ void main() {
     );
 
     expect(guidance, '点击上方的抖音图标。');
+  });
+
+  test('fast navigation recognizes the launcher without cloud analysis', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['18:39', '抖音', '小路'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision?.pageKey, 'android_launcher');
+    expect(decision?.guidance, '点屏幕上的抖音图标。');
+  });
+
+  test('fast navigation leaves unknown screens to cloud analysis', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['一个未知页面'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision, isNull);
   });
 }

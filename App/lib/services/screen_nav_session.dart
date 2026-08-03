@@ -4,12 +4,14 @@ import 'screen_capture_service.dart';
 import 'tts_service.dart';
 import 'hd_map.dart';
 import 'guidance_style.dart';
+import 'fast_navigation.dart';
 
 /// 录屏模式导航会话
 /// 截屏 → 帧变化检测 → UI-TARS API 识别 → 生成引导
 class ScreenNavSession {
   final ScreenCaptureManager _capture = ScreenCaptureManager();
   final UiTarsClient _api = UiTarsClient();
+  final OnDeviceOcrClient _localOcr = OnDeviceOcrClient();
   final FrameChangeDetector _changeDetector = FrameChangeDetector();
   TTSService _tts;
 
@@ -33,6 +35,11 @@ class ScreenNavSession {
   final PageIdentityStabilizer _pageStabilizer = PageIdentityStabilizer();
 
   bool _isAnalyzing = false; // 防止并发 API 调用
+  bool _isFastAnalyzing = false;
+  String? _pendingFastFrame;
+  String? _pendingCloudFrame;
+  DateTime? _lastLocalMatchedAt;
+  FastNavigationResolver? _fastResolver;
   final List<Map<String, String>> _apiHistory = [];
   String _diagnosticSessionId = '';
 
@@ -55,6 +62,7 @@ class ScreenNavSession {
     void Function()? onStatusChange,
     void Function()? onComplete,
   }) {
+    _fastResolver = FastNavigationResolver(hdMap);
     _onGuidance = onGuidance;
     _onDebugLog = onDebugLog;
     _onStatusChange = onStatusChange;
@@ -85,6 +93,11 @@ class ScreenNavSession {
     _pageStabilizer.reset();
     _isComplete = false;
     _isNavigating = false;
+    _isAnalyzing = false;
+    _isFastAnalyzing = false;
+    _pendingFastFrame = null;
+    _pendingCloudFrame = null;
+    _lastLocalMatchedAt = null;
 
     _debug('请求截屏权限...');
     _notifyStatus();
@@ -116,20 +129,99 @@ class ScreenNavSession {
   /// 处理每一帧
   void _onFrame(String base64Frame) {
     if (!_isActive || _isComplete) return;
-    if (_isAnalyzing) return; // 上一次 API 还没返回，跳过
-
-    // 画面变化检测 + 频率控制
     if (!_changeDetector.shouldAnalyze(base64Frame)) return;
 
-    _debug('画面有变化，调用 API 识别...');
+    _pendingFastFrame = base64Frame;
+    _drainFastFrames();
+  }
+
+  Future<void> _drainFastFrames() async {
+    if (_isFastAnalyzing) return;
+    _isFastAnalyzing = true;
+    try {
+      while (_pendingFastFrame != null && _isActive && !_isComplete) {
+        final frame = _pendingFastFrame!;
+        _pendingFastFrame = null;
+        final result = await _localOcr.recognize(frame);
+        final texts =
+            (result?['texts'] as List<dynamic>?)
+                ?.map((item) => item.toString())
+                .toList() ??
+            const <String>[];
+        final decision = _fastResolver?.resolve(
+          texts: texts,
+          app: _app,
+          task: _task,
+          style: _guidanceStyle,
+        );
+        if (decision != null) {
+          _lastLocalMatchedAt = DateTime.now();
+          _pendingCloudFrame = null;
+          _handleFastDecision(
+            decision,
+            (result?['duration_ms'] as num?)?.toInt() ?? 0,
+          );
+        } else {
+          _queueCloudAnalysis(frame);
+        }
+      }
+    } finally {
+      _isFastAnalyzing = false;
+    }
+  }
+
+  void _handleFastDecision(FastNavigationDecision decision, int durationMs) {
+    _debug(
+      '本地识别: page="${decision.pageName}" '
+      'confidence=${decision.confidence.toStringAsFixed(2)} ${durationMs}ms',
+    );
+    _sendDiagnostic('api_result', {
+      'page_name': decision.pageName,
+      'page_key': decision.pageKey,
+      'action_type': 'local_map',
+      'duration_ms': durationMs,
+      'http_status': 0,
+      'confidence': decision.confidence,
+    });
+    if (!_pageStabilizer.shouldAnnounce(decision.pageKey)) return;
+    if (_isDuplicateSpeech(decision.guidance)) return;
+
+    _nodeEnterTime = DateTime.now();
+    _stuckLevel = 0;
+    _currentGuidance = decision.guidance;
+    _lastSpokenText = decision.guidance;
+    _lastSpokenTime = DateTime.now();
+    _onGuidance?.call(decision.guidance, decision.risks);
+    _tts.speak(decision.guidance);
+    _debug('快速引导已输出: ${decision.guidance}');
+    _sendDiagnostic('guidance_announced', {
+      'page_name': decision.pageName,
+      'page_key': decision.pageKey,
+      'action_type': 'local_map',
+    });
+    _notifyStatus();
+  }
+
+  void _queueCloudAnalysis(String frame) {
+    if (_isAnalyzing) {
+      _pendingCloudFrame = frame;
+      return;
+    }
     _isAnalyzing = true;
-    _analyzeFrame(base64Frame).then((_) {
+    final startedAt = DateTime.now();
+    _debug('本地地图未匹配，调用云端 API...');
+    _analyzeFrame(frame, startedAt).whenComplete(() {
       _isAnalyzing = false;
+      final pending = _pendingCloudFrame;
+      _pendingCloudFrame = null;
+      if (pending != null && _isActive && !_isComplete) {
+        _queueCloudAnalysis(pending);
+      }
     });
   }
 
   /// 调用 API 识别画面
-  Future<void> _analyzeFrame(String base64Frame) async {
+  Future<void> _analyzeFrame(String base64Frame, DateTime startedAt) async {
     final result = await _api.analyze(
       base64Image: base64Frame,
       task: _task,
@@ -175,6 +267,16 @@ class ScreenNavSession {
       thought: thought,
       style: _guidanceStyle,
     );
+
+    if (_lastLocalMatchedAt?.isAfter(startedAt) == true) {
+      _debug('云端结果已过时，本地已识别更新页面');
+      _sendDiagnostic('guidance_suppressed', {
+        'reason': 'stale_cloud_result',
+        'page_name': pageName,
+        'page_key': pageKey,
+      });
+      return;
+    }
 
     _sendDiagnostic('api_result', {
       'page_name': pageName,
@@ -276,6 +378,8 @@ class ScreenNavSession {
     _isNavigating = false;
     _isComplete = true;
     _changeDetector.reset();
+    _pendingFastFrame = null;
+    _pendingCloudFrame = null;
     _notifyStatus();
   }
 
@@ -292,6 +396,8 @@ class ScreenNavSession {
     _nodeEnterTime = null;
     _apiHistory.clear();
     _changeDetector.reset();
+    _pendingFastFrame = null;
+    _pendingCloudFrame = null;
     _notifyStatus();
   }
 
