@@ -80,6 +80,7 @@ class UiTarsClient {
         'image': 'data:image/jpeg;base64,$base64Image',
         'task': '用户的目标是: "$task"。请识别当前页面，判断用户在完成目标过程中的哪一步。',
         'history': history,
+        'fast_navigation': true,
         'include_ocr_evidence': includeOcrEvidence,
       };
       if (imageWidth != null) {

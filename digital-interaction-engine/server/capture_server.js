@@ -25,18 +25,22 @@ let buildInProgress = false;
 
 // ═══ Rate Limiting & Caching ═══
 let lastApiCallTime = 0;
-const API_MIN_INTERVAL_MS = 2000; // min 2s between API calls
+const API_MIN_INTERVAL_MS = 100;
 const aiResultCache = new Map();
 const CACHE_TTL_MS = 30000; // 30 seconds
 const CACHE_MAX_SIZE = 30;
 
-function getCacheKey(imageB64, task) {
-  const imgHash = String(imageB64 || "").slice(0, 200);
-  const taskHash = String(task || "").slice(0, 100);
-  return imgHash + "::" + taskHash;
+function getCacheKey(imageB64, task, mode) {
+  return crypto.createHash("sha1")
+    .update(String(mode || "default"))
+    .update("\n")
+    .update(String(task || ""))
+    .update("\n")
+    .update(String(imageB64 || ""))
+    .digest("hex");
 }
 
-function getCachedResult(key) { return null; // DISABLED — client-side change detection handles this
+function getCachedResult(key) {
   const entry = aiResultCache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
@@ -739,9 +743,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const task = data.task || '\u8bc6\u522b\u5f53\u524d\u9875\u9762\u5185\u5bb9\uff0c\u5e76\u6307\u51fa\u5e94\u8be5\u70b9\u51fb\u54ea\u4e2a\u6309\u94ae';
+      const fastNavigation = data.fast_navigation === true;
 
       // Check cache first
-      const cacheKey = getCacheKey(imageData, task);
+      const cacheKey = getCacheKey(imageData, task, fastNavigation ? "fast" : "full");
       const cached = getCachedResult(cacheKey);
       if (cached) {
         cached.cached = true;
@@ -789,7 +794,7 @@ const server = http.createServer(async (req, res) => {
           enrichedTask += `第${i + 1}步: 在"${step.page}"页面 → ${step.best_action}\n`;
         });
         enrichedTask += '\n请根据当前截图判断用户在第几步，建议下一步操作。如果当前页面与路径中的步骤不匹配，可以适当调整。\n';
-      } else {
+      } else if (!fastNavigation) {
         // Fallback: inject page-level corrections knowledge
         const knowledge = loadCorrectionsKnowledge();
         if (knowledge && knowledge.pages && Object.keys(knowledge.pages).length > 0) {
@@ -807,31 +812,35 @@ const server = http.createServer(async (req, res) => {
       // Build system prompt using UI-TARS phone template
       const instruction = enrichedTask;
       const language = 'Chinese';
-      let systemPrompt = `You are a GUI agent helping an elderly user navigate a phone app. You are given a task and screenshots. You need to analyze the current screen and suggest the next action.\n## Output Format\n\`\`\`\nThought: ...\nAction: ...\n\`\`\`\n\n## Action Space\nclick(point='<point>x1 y1</point>')\nlong_press(point='<point>x1 y1</point>')\ntype(content='')\nscroll(point='<point>x1 y1</point>', direction='down or up or right or left')\nopen_app(app_name='')\ndrag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')\npress_home()\npress_back()\nfinished(content='')\n\n## CRITICAL RULES for Thought part (use ${language}):\n1. 第一行写: 页面名: XXX（简洁的页面名称，如"抖音首页"、"抖音个人主页"）\n2. 第二行写: 操作: 用通俗易懂的文字描述下一步操作，必须说清楚：在屏幕的什么位置（如左上角、右下角、中间偏下）、是什么元素（按钮、图标、文字链接）、上面写着什么字或画着什么图案。例如："点击右下角的'我'标签"、"点击左上角的返回箭头"、"向上滑动屏幕查看更多商品"。\n3. 绝对不要在Thought中输出坐标数字。\n4. 页面名要简洁稳定，同一个页面每次用相同的名字。\n\n## User Instruction\n${instruction}`;
+      let systemPrompt = fastNavigation
+        ? `根据手机截图和用户目标给出下一步。只输出两行，不解释：\n页面名: 稳定简短的页面名\n操作: 直接说明点击或滑动的位置、元素和可见文字，20字左右\n同一页面始终使用同一页面名。看不清金额时不要猜测或复述。\n用户目标：${instruction}`
+        : `You are a GUI agent helping an elderly user navigate a phone app. You are given a task and screenshots. You need to analyze the current screen and suggest the next action.\n## Output Format\n\`\`\`\nThought: ...\nAction: ...\n\`\`\`\n\n## Action Space\nclick(point='<point>x1 y1</point>')\nlong_press(point='<point>x1 y1</point>')\ntype(content='')\nscroll(point='<point>x1 y1</point>', direction='down or up or right or left')\nopen_app(app_name='')\ndrag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')\npress_home()\npress_back()\nfinished(content='')\n\n## CRITICAL RULES for Thought part (use ${language}):\n1. 第一行写: 页面名: XXX（简洁的页面名称，如"抖音首页"、"抖音个人主页"）\n2. 第二行写: 操作: 用通俗易懂的文字描述下一步操作，必须说清楚：在屏幕的什么位置（如左上角、右下角、中间偏下）、是什么元素（按钮、图标、文字链接）、上面写着什么字或画着什么图案。例如："点击右下角的'我'标签"、"点击左上角的返回箭头"、"向上滑动屏幕查看更多商品"。\n3. 绝对不要在Thought中输出坐标数字。\n4. 页面名要简洁稳定，同一个页面每次用相同的名字。\n\n## User Instruction\n${instruction}`;
       systemPrompt += "\n\n## 精度规则\n";
-      systemPrompt += "5. 涉及价格、退款金额、数量时必须逐字符核对，49.8不能写成498，也不能自行补零。\n";
-      systemPrompt += "6. Thought第三行写“关键文字:”，列出当前页面最稳定的3到8个标题、标签或按钮。\n";
-      systemPrompt += "7. Thought第四行写“金额:”，原样列出看见的金额或小数，没有则写“无”。\n";
+      systemPrompt += "5. 涉及金额时，只有看清小数点后才能提及；导航语音无需复述金额。\n";
 
-      // Build messages array
-      const messages = [
-        { role: 'user', content: systemPrompt }
-      ];
-
-      // Add history
-      history.forEach(function(h) {
-        messages.push({ role: h.role, content: h.content });
-      });
-
-      // Add current screenshot
       const imageUrl = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: task },
-          { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } }
-        ]
-      });
+      const messages = fastNavigation
+        ? [{
+            role: 'user',
+            content: [
+              { type: 'text', text: systemPrompt },
+              { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } }
+            ]
+          }]
+        : [{ role: 'user', content: systemPrompt }];
+
+      if (!fastNavigation) {
+        history.forEach(function(h) {
+          messages.push({ role: h.role, content: h.content });
+        });
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: task },
+            { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } }
+          ]
+        });
+      }
 
       // Call Volcengine API
       const apiResponse = await fetch(ARK_BASE_URL + '/chat/completions', {
@@ -844,7 +853,7 @@ const server = http.createServer(async (req, res) => {
           model: ARK_MODEL,
           messages: messages,
           temperature: 0,
-          max_tokens: 1024,
+          max_tokens: fastNavigation ? 80 : 160,
           thinking: { type: 'disabled' } // disable thinking for speed
         })
       });

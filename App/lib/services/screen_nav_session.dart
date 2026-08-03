@@ -4,8 +4,6 @@ import 'screen_capture_service.dart';
 import 'tts_service.dart';
 import 'hd_map.dart';
 import 'guidance_style.dart';
-import 'fast_navigation.dart';
-import '../models/accessibility_event.dart';
 
 /// 录屏模式导航会话
 /// 截屏 → 帧变化检测 → UI-TARS API 识别 → 生成引导
@@ -36,8 +34,6 @@ class ScreenNavSession {
 
   bool _isAnalyzing = false; // 防止并发 API 调用
   String? _pendingCloudFrame;
-  DateTime? _lastLocalMatchedAt;
-  FastNavigationResolver? _fastResolver;
   final List<Map<String, String>> _apiHistory = [];
   String _diagnosticSessionId = '';
 
@@ -60,7 +56,6 @@ class ScreenNavSession {
     void Function()? onStatusChange,
     void Function()? onComplete,
   }) {
-    _fastResolver = FastNavigationResolver(hdMap);
     _onGuidance = onGuidance;
     _onDebugLog = onDebugLog;
     _onStatusChange = onStatusChange;
@@ -93,7 +88,6 @@ class ScreenNavSession {
     _isNavigating = false;
     _isAnalyzing = false;
     _pendingCloudFrame = null;
-    _lastLocalMatchedAt = null;
 
     _debug('请求截屏权限...');
     _notifyStatus();
@@ -130,66 +124,14 @@ class ScreenNavSession {
     _queueCloudAnalysis(base64Frame);
   }
 
-  void handleAccessibilityEvent(AccessibilityEventData event) {
-    if (!_isActive || _isComplete || event.windowTexts.isEmpty) return;
-    final startedAt = DateTime.now();
-    final decision = _fastResolver?.resolve(
-      texts: event.windowTexts,
-      app: _app,
-      task: _task,
-      style: _guidanceStyle,
-    );
-    if (decision == null) return;
-
-    _lastLocalMatchedAt = DateTime.now();
-    _pendingCloudFrame = null;
-    _handleFastDecision(
-      decision,
-      DateTime.now().difference(startedAt).inMilliseconds,
-    );
-  }
-
-  void _handleFastDecision(FastNavigationDecision decision, int durationMs) {
-    _debug(
-      '本地识别: page="${decision.pageName}" '
-      'confidence=${decision.confidence.toStringAsFixed(2)} ${durationMs}ms',
-    );
-    _sendDiagnostic('api_result', {
-      'page_name': decision.pageName,
-      'page_key': decision.pageKey,
-      'action_type': 'local_map',
-      'duration_ms': durationMs,
-      'http_status': 0,
-      'confidence': decision.confidence,
-    });
-    if (!_pageStabilizer.shouldAnnounce(decision.pageKey)) return;
-    if (_isDuplicateSpeech(decision.guidance)) return;
-
-    _nodeEnterTime = DateTime.now();
-    _stuckLevel = 0;
-    _currentGuidance = decision.guidance;
-    _lastSpokenText = decision.guidance;
-    _lastSpokenTime = DateTime.now();
-    _onGuidance?.call(decision.guidance, decision.risks);
-    _tts.speak(decision.guidance);
-    _debug('快速引导已输出: ${decision.guidance}');
-    _sendDiagnostic('guidance_announced', {
-      'page_name': decision.pageName,
-      'page_key': decision.pageKey,
-      'action_type': 'local_map',
-    });
-    _notifyStatus();
-  }
-
   void _queueCloudAnalysis(String frame) {
     if (_isAnalyzing) {
       _pendingCloudFrame = frame;
       return;
     }
     _isAnalyzing = true;
-    final startedAt = DateTime.now();
-    _debug('本地地图未匹配，调用云端 API...');
-    _analyzeFrame(frame, startedAt).whenComplete(() {
+    _debug('画面有变化，调用视觉 API 识别...');
+    _analyzeFrame(frame).whenComplete(() {
       _isAnalyzing = false;
       final pending = _pendingCloudFrame;
       _pendingCloudFrame = null;
@@ -200,7 +142,7 @@ class ScreenNavSession {
   }
 
   /// 调用 API 识别画面
-  Future<void> _analyzeFrame(String base64Frame, DateTime startedAt) async {
+  Future<void> _analyzeFrame(String base64Frame) async {
     final result = await _api.analyze(
       base64Image: base64Frame,
       task: _task,
@@ -246,20 +188,6 @@ class ScreenNavSession {
       thought: thought,
       style: _guidanceStyle,
     );
-
-    final recentLocalMatch =
-        _lastLocalMatchedAt != null &&
-        DateTime.now().difference(_lastLocalMatchedAt!) <
-            const Duration(seconds: 10);
-    if (_lastLocalMatchedAt?.isAfter(startedAt) == true || recentLocalMatch) {
-      _debug('云端结果已过时，本地已识别更新页面');
-      _sendDiagnostic('guidance_suppressed', {
-        'reason': 'stale_cloud_result',
-        'page_name': pageName,
-        'page_key': pageKey,
-      });
-      return;
-    }
 
     _sendDiagnostic('api_result', {
       'page_name': pageName,
