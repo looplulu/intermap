@@ -42,6 +42,51 @@ class PageIdentityStabilizer {
   }
 }
 
+class GuidanceTargetStabilizer {
+  String _currentTarget = '';
+  String _candidateTarget = '';
+  int _candidateCount = 0;
+
+  void reset() {
+    _currentTarget = '';
+    _candidateTarget = '';
+    _candidateCount = 0;
+  }
+
+  void accept(String guidance) {
+    _currentTarget = _extractTarget(guidance);
+    _candidateTarget = '';
+    _candidateCount = 0;
+  }
+
+  bool shouldCorrect(String guidance) {
+    final nextTarget = _extractTarget(guidance);
+    if (nextTarget.isEmpty ||
+        _currentTarget.isEmpty ||
+        nextTarget == _currentTarget) {
+      _candidateTarget = '';
+      _candidateCount = 0;
+      return false;
+    }
+
+    if (nextTarget == _candidateTarget) {
+      _candidateCount++;
+    } else {
+      _candidateTarget = nextTarget;
+      _candidateCount = 1;
+    }
+    if (_candidateCount < 2) return false;
+
+    accept(guidance);
+    return true;
+  }
+
+  String _extractTarget(String guidance) {
+    final match = RegExp(r'''[“"'‘]([^”"'’]+)[”"'’]''').firstMatch(guidance);
+    return match?.group(1)?.trim() ?? '';
+  }
+}
+
 class GuidanceFormatter {
   static String extractPageName(String text) {
     return _extractField(

@@ -60,7 +60,7 @@ class FastNavigationResolver {
       return const FastNavigationDecision(
         pageKey: 'android_launcher',
         pageName: '手机桌面',
-        guidance: '找到黑色方形里有彩色音符、下方写着“抖音”的图标，点一下。',
+        guidance: '在手机桌面，点击“抖音”，它是黑色方形里有彩色音符的应用图标。',
         risks: [],
         confidence: 0.9,
       );
@@ -72,7 +72,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_lottery_popup',
         pageName: '抽奖弹窗',
         page: '当前是抽奖弹窗。',
-        action: '点弹窗右上角的关闭按钮。',
+        action: '在弹窗右上角，点击关闭按钮。',
       );
     }
 
@@ -82,7 +82,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_refund_reason',
         pageName: '退款原因选择页',
         page: '当前是退款原因选择页。',
-        action: '选择符合实际情况的退款原因。',
+        action: '在原因列表中，点击符合实际情况的退款原因。',
       );
     }
 
@@ -92,7 +92,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_instant_refund',
         pageName: '极速退款申请页',
         page: '当前是极速退款申请页。',
-        action: '确认退款信息后，点底部的“提交申请”。',
+        action: '在页面底部，点击“提交申请”。',
       );
     }
 
@@ -102,7 +102,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_order_detail',
         pageName: '待发货订单详情',
         page: '当前是待发货订单详情页。',
-        action: '点商品右侧的“申请退款”。',
+        action: '在商品右侧，点击“申请退款”。',
       );
     }
 
@@ -113,7 +113,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_order_center',
         pageName: '抖音订单入口页',
         page: '当前是抖音订单入口页。',
-        action: '点页面里的“全部订单”，不要点“退款/售后”。',
+        action: '在页面左上角，点击第二个“我的订单”，不要点击“退款/售后”。',
       );
     }
 
@@ -125,7 +125,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_all_orders',
         pageName: '全部订单',
         page: '当前是全部订单页。',
-        action: '你自己找到想退款的那笔订单，再点订单里的商品。',
+        action: '在订单列表中，点击你想退货的商品。',
       );
     }
 
@@ -134,7 +134,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_mall_profile',
         pageName: '抖音商城个人页',
         page: '当前是抖音商城个人页。',
-        action: '点左上角的“我的订单”。',
+        action: '在页面左上角，点击当前显示的第二个订单入口。',
       );
     }
 
@@ -144,7 +144,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_profile',
         pageName: '抖音个人主页',
         page: '当前是抖音个人主页。',
-        action: '点页面中间偏左、购物车图标下方写着“我的订单”的入口。',
+        action: '在页面中间偏左，点击当前显示的订单入口，它是购物车图标。',
       );
     }
 
@@ -155,7 +155,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_home',
         pageName: '抖音首页',
         page: '当前是抖音首页。',
-        action: '点底部右下角的“我”。',
+        action: '在页面底部右下角，点击“我”。',
       );
     }
 

@@ -449,8 +449,12 @@ function mergeTrainingPaths(paths) {
     for (const step of candidate) {
       const target = canonical.find(item => sameTrainingPage(item.page, step.page));
       if (!target) continue;
-      if ((step.is_correction && step.action) || (!target.action && step.action)) {
+      const newerCorrection = step.is_correction &&
+        step.action &&
+        (!target.is_correction || (step.timestamp || 0) >= (target.timestamp || 0));
+      if (newerCorrection || (!target.action && step.action)) {
         target.action = step.action;
+        target.timestamp = step.timestamp || 0;
       }
       if (step.is_correction) target.is_correction = true;
     }
@@ -509,6 +513,7 @@ function buildTaskFlows() {
               action: String(payload.action || "").trim(),
               feedback_type: payload.feedback_type || evt.event_type,
               feedback_note: String(payload.feedback_note || "").trim(),
+              timestamp: Date.parse(evt.timestamp || "") || 0,
               verified: evt.event_type === "train_step_confirmed" || (payload.feedback_type === "wrong_action" && payload.feedback_note),
             });
           }
@@ -533,6 +538,7 @@ function buildTaskFlows() {
           page: s.page,
           action: s.feedback_note || s.action,
           is_correction: s.feedback_type === "wrong_action",
+          timestamp: s.timestamp || 0,
         }));
 
       const flowKey = `${normalizeAppKey(data.app)}::${goal}`;
@@ -639,6 +645,16 @@ function extractThoughtField(thought, label, stopLabels) {
     new RegExp(`(?:^|\\n)${escapedLabel}\\s*[:：]\\s*(.+?)(?=\\n(?:${stop})\\s*[:：]|$)`, "s")
   );
   return match ? match[1].trim() : "";
+}
+
+function normalizeFastNavigationThought(thought) {
+  const text = String(thought || "").trim();
+  if (!text || /(?:^|\n)(?:页面名|当前页面|页面)\s*[:：]/.test(text)) {
+    return text;
+  }
+  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  if (lines.length < 2) return text;
+  return `页面名: ${lines[0]}\n操作: ${lines.slice(1).join(" ")}`;
 }
 
 function extractAmounts(texts) {
@@ -884,16 +900,18 @@ const server = http.createServer(async (req, res) => {
       }
       if (isDouyinRefund) {
         enrichedTask += "\n\n## 已验证的抖音退款路径，不得改道\n";
-        enrichedTask += "首页→点右下角‘我’；个人主页→点购物车图标‘我的订单’；";
-        enrichedTask += "订单入口→点‘全部订单’，禁止点‘退款/售后’；";
-        enrichedTask += "全部订单→让用户自己选想退款的订单；订单详情→点‘申请退款’。\n";
+        enrichedTask += "首页→点右下角‘我’；个人主页→点购物车图标的第一个订单入口；";
+        enrichedTask += "商城页→点左上角的第二个订单入口，禁止点‘退款/售后’；";
+        enrichedTask += "进入全部订单页后→让用户自己选想退货的商品；订单详情→点‘申请退款’。\n";
+        enrichedTask += "地图只决定目标位置和语义。按钮文字必须逐字采用当前截图实际显示，";
+        enrichedTask += "即使与训练时的‘我的订单’不同，也绝不能用历史文字替代。\n";
       }
 
       // Build system prompt using UI-TARS phone template
       const instruction = enrichedTask;
       const language = 'Chinese';
       let systemPrompt = fastNavigation
-        ? `根据手机截图和用户目标给出下一步。只输出两行，不解释：\n页面名: 稳定简短的页面名\n操作: 说清目标在屏幕的方位、图标外观和旁边的可见文字，30到45字；不能只说“点某按钮”\n例如：点击屏幕中间偏下、黑色方形里有彩色音符的“抖音”图标\n例如：点击页面中间偏左、购物车图标下方写着“我的订单”的入口\n同一页面始终使用同一页面名。看不清金额时不要猜测或复述。\n用户目标：${instruction}`
+        ? `根据手机截图和用户目标给出下一步。只输出两行，不解释：\n页面名: 稳定简短的页面名\n操作: 严格使用“在{位置}，点击{当前截图实际显示的文字或元素名称}[，它是{图标外观}]”句式\n必须先说位置，再说点击什么，最后才说图标外观；目标没有图标或图案时，省略最后的外观描述\n可见文字必须逐字来自当前截图，禁止照抄地图里的历史按钮名\n例如：在屏幕下方偏左，点击“抖音”，它是黑色方形里有彩色音符的图标\n例如：在页面底部，点击“提交申请”\n同一页面始终使用同一页面名。看不清金额时不要猜测或复述。\n用户目标：${instruction}`
         : `You are a GUI agent helping an elderly user navigate a phone app. You are given a task and screenshots. You need to analyze the current screen and suggest the next action.\n## Output Format\n\`\`\`\nThought: ...\nAction: ...\n\`\`\`\n\n## Action Space\nclick(point='<point>x1 y1</point>')\nlong_press(point='<point>x1 y1</point>')\ntype(content='')\nscroll(point='<point>x1 y1</point>', direction='down or up or right or left')\nopen_app(app_name='')\ndrag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')\npress_home()\npress_back()\nfinished(content='')\n\n## CRITICAL RULES for Thought part (use ${language}):\n1. 第一行写: 页面名: XXX（简洁的页面名称，如"抖音首页"、"抖音个人主页"）\n2. 第二行写: 操作: 用通俗易懂的文字描述下一步操作，必须说清楚：在屏幕的什么位置（如左上角、右下角、中间偏下）、是什么元素（按钮、图标、文字链接）、上面写着什么字或画着什么图案。例如："点击右下角的'我'标签"、"点击左上角的返回箭头"、"向上滑动屏幕查看更多商品"。\n3. 绝对不要在Thought中输出坐标数字。\n4. 页面名要简洁稳定，同一个页面每次用相同的名字。\n\n## User Instruction\n${instruction}`;
       systemPrompt += "\n\n## 精度规则\n";
       systemPrompt += "5. 涉及金额时，只有看清小数点后才能提及；导航语音无需复述金额。\n";
@@ -968,6 +986,9 @@ const server = http.createServer(async (req, res) => {
         thought = rawContent.split('Action:')[0].trim();
       } else {
         thought = rawContent.trim();
+      }
+      if (fastNavigation) {
+        thought = normalizeFastNavigationThought(thought);
       }
 
       const actionMatch = rawContent.match(/Action:\s*(.+)/);
@@ -1057,4 +1078,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { mergeTrainingPaths, normalizeAppKey };
+module.exports = {
+  mergeTrainingPaths,
+  normalizeAppKey,
+  normalizeFastNavigationThought,
+};

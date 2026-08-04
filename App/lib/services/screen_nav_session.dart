@@ -31,6 +31,7 @@ class ScreenNavSession {
   int _stuckLevel = 0;
   GuidanceStyle _guidanceStyle = GuidanceStyle.concise;
   final PageIdentityStabilizer _pageStabilizer = PageIdentityStabilizer();
+  final GuidanceTargetStabilizer _targetStabilizer = GuidanceTargetStabilizer();
 
   bool _isAnalyzing = false; // 防止并发 API 调用
   String? _pendingCloudFrame;
@@ -70,6 +71,7 @@ class ScreenNavSession {
     _guidanceStyle = style;
     _lastSpokenText = '';
     _pageStabilizer.reset();
+    _targetStabilizer.reset();
     _lastSpokenTime = null;
   }
 
@@ -84,6 +86,7 @@ class ScreenNavSession {
     _lastSpokenText = '';
     _stuckLevel = 0;
     _pageStabilizer.reset();
+    _targetStabilizer.reset();
     _isComplete = false;
     _isNavigating = false;
     _isAnalyzing = false;
@@ -200,7 +203,10 @@ class ScreenNavSession {
       'confidence': result['confidence'] ?? 0,
     });
 
-    if (!_pageStabilizer.shouldAnnounce(pageKey)) {
+    final pageChanged = _pageStabilizer.shouldAnnounce(pageKey);
+    final targetCorrected =
+        !pageChanged && _targetStabilizer.shouldCorrect(guidance);
+    if (!pageChanged && !targetCorrected) {
       _debug('页面身份未变化，保留当前引导');
       _sendDiagnostic('guidance_suppressed', {
         'reason': 'same_page',
@@ -216,7 +222,7 @@ class ScreenNavSession {
     }
 
     // 语音去重
-    if (_isDuplicateSpeech(guidance)) {
+    if (!targetCorrected && _isDuplicateSpeech(guidance)) {
       _debug('语音去重，跳过');
       _sendDiagnostic('guidance_suppressed', {
         'reason': 'similar_guidance',
@@ -232,6 +238,7 @@ class ScreenNavSession {
     _currentGuidance = guidance;
     _lastSpokenText = guidance;
     _lastSpokenTime = DateTime.now();
+    _targetStabilizer.accept(guidance);
 
     _onGuidance?.call(guidance, []);
     _tts.speak(guidance);
@@ -305,6 +312,7 @@ class ScreenNavSession {
     _currentGuidance = '';
     _lastSpokenText = '';
     _pageStabilizer.reset();
+    _targetStabilizer.reset();
     _stuckLevel = 0;
     _nodeEnterTime = null;
     _apiHistory.clear();

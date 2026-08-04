@@ -22,6 +22,15 @@ void main() {
     expect(stabilizer.shouldAnnounce('refunddetail'), isFalse);
   });
 
+  test('same page accepts a stable GUI target text correction', () {
+    final stabilizer = GuidanceTargetStabilizer();
+    stabilizer.accept('在页面中间偏左，点击“我的订单”，它是购物车图标。');
+
+    expect(stabilizer.shouldCorrect('在页面中间偏左，点击“待发货1”，它是购物车图标。'), isFalse);
+    expect(stabilizer.shouldCorrect('在页面中间偏左，点击“待发货1”，它是购物车图标。'), isTrue);
+    expect(stabilizer.shouldCorrect('在页面中间偏左，点击“待发货1”，它是购物车图标。'), isFalse);
+  });
+
   test('training session records a page node and candidate flow', () {
     final manager = TrainingSessionManager();
 
@@ -114,7 +123,7 @@ void main() {
     );
 
     expect(decision?.pageKey, 'android_launcher');
-    expect(decision?.guidance, '找到黑色方形里有彩色音符、下方写着“抖音”的图标，点一下。');
+    expect(decision?.guidance, '在手机桌面，点击“抖音”，它是黑色方形里有彩色音符的应用图标。');
   });
 
   test('fast navigation leaves unknown screens to cloud analysis', () {
@@ -141,22 +150,25 @@ void main() {
     );
 
     expect(decision?.pageKey, 'douyin_profile');
-    expect(decision?.guidance, '点页面中间偏左、购物车图标下方写着“我的订单”的入口。');
+    expect(decision?.guidance, '在页面中间偏左，点击当前显示的订单入口，它是购物车图标。');
   });
 
-  test('fast navigation never sends refund users to after-sales list', () {
-    final resolver = FastNavigationResolver(HDMap());
+  test(
+    'fast navigation uses the second order entry instead of after-sales',
+    () {
+      final resolver = FastNavigationResolver(HDMap());
 
-    final decision = resolver.resolve(
-      texts: const ['我的订单', '全部订单', '退款/售后'],
-      app: 'douyin',
-      task: 'refund',
-      style: GuidanceStyle.concise,
-    );
+      final decision = resolver.resolve(
+        texts: const ['我的订单', '全部订单', '退款/售后'],
+        app: 'douyin',
+        task: 'refund',
+        style: GuidanceStyle.concise,
+      );
 
-    expect(decision?.pageKey, 'douyin_order_center');
-    expect(decision?.guidance, '点页面里的“全部订单”，不要点“退款/售后”。');
-  });
+      expect(decision?.pageKey, 'douyin_order_center');
+      expect(decision?.guidance, '在页面左上角，点击第二个“我的订单”，不要点击“退款/售后”。');
+    },
+  );
 
   test('fast navigation uses verified all-orders correction', () {
     final resolver = FastNavigationResolver(HDMap());
@@ -169,7 +181,7 @@ void main() {
     );
 
     expect(decision?.pageKey, 'douyin_all_orders');
-    expect(decision?.guidance, '你自己找到想退款的那笔订单，再点订单里的商品。');
+    expect(decision?.guidance, '在订单列表中，点击你想退货的商品。');
   });
 
   test('fast navigation handles instant refund without cloud analysis', () {
@@ -183,6 +195,6 @@ void main() {
     );
 
     expect(decision?.pageKey, 'douyin_instant_refund');
-    expect(decision?.guidance, '确认退款信息后，点底部的“提交申请”。');
+    expect(decision?.guidance, '在页面底部，点击“提交申请”。');
   });
 }
