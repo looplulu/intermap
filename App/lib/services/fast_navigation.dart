@@ -60,7 +60,7 @@ class FastNavigationResolver {
       return const FastNavigationDecision(
         pageKey: 'android_launcher',
         pageName: '手机桌面',
-        guidance: '点屏幕上的抖音图标。',
+        guidance: '找到黑色方形里有彩色音符、下方写着“抖音”的图标，点一下。',
         risks: [],
         confidence: 0.9,
       );
@@ -106,6 +106,17 @@ class FastNavigationResolver {
       );
     }
 
+    if (fullText.contains('我的订单') &&
+        fullText.contains('全部订单') &&
+        (fullText.contains('退款/售后') || fullText.contains('退款售后'))) {
+      return decision(
+        pageKey: 'douyin_order_center',
+        pageName: '抖音订单入口页',
+        page: '当前是抖音订单入口页。',
+        action: '点页面里的“全部订单”，不要点“退款/售后”。',
+      );
+    }
+
     if (fullText.contains('全部订单') &&
         (fullText.contains('待付款') ||
             fullText.contains('待发货') ||
@@ -114,7 +125,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_all_orders',
         pageName: '全部订单',
         page: '当前是全部订单页。',
-        action: '选择你要退款的商品。',
+        action: '你自己找到想退款的那笔订单，再点订单里的商品。',
       );
     }
 
@@ -133,7 +144,7 @@ class FastNavigationResolver {
         pageKey: 'douyin_profile',
         pageName: '抖音个人主页',
         page: '当前是抖音个人主页。',
-        action: '点页面中间左侧的“我的订单”。',
+        action: '点页面中间偏左、购物车图标下方写着“我的订单”的入口。',
       );
     }
 

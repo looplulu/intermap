@@ -110,7 +110,7 @@ class ScreenNavSession {
       const channel = MethodChannel('com.intermap/app');
       await channel.invokeMethod('moveToBackground');
     } catch (_) {}
-    await Future.delayed(const Duration(milliseconds: 800));
+    await Future.delayed(const Duration(milliseconds: 450));
     _capture.startListening(_onFrame);
 
     return true;
@@ -145,6 +145,7 @@ class ScreenNavSession {
   Future<void> _analyzeFrame(String base64Frame) async {
     final result = await _api.analyze(
       base64Image: base64Frame,
+      app: _app,
       task: _task,
       history: _apiHistory.take(3).toList(),
     );
@@ -192,6 +193,7 @@ class ScreenNavSession {
     _sendDiagnostic('api_result', {
       'page_name': pageName,
       'page_key': pageKey,
+      'guidance': guidance,
       'action_type': actionType,
       'duration_ms': result['_duration_ms'] ?? 0,
       'http_status': result['_http_status'] ?? 200,
@@ -236,6 +238,7 @@ class ScreenNavSession {
     _sendDiagnostic('guidance_announced', {
       'page_name': pageName,
       'page_key': pageKey,
+      'guidance': guidance,
       'action_type': actionType,
     });
     _debug('引导已输出: $guidance');

@@ -63,12 +63,15 @@ class UiTarsClient {
   static const String _baseUrl = 'https://loop-lulu.com/intermap/api/ui-tars';
   static const String _diagnosticUrl =
       'https://loop-lulu.com/intermap/api/navigation-diagnostics';
+  final http.Client _client = http.Client();
 
   /// 调用 UI-TARS 分析屏幕截图
   /// 返回 API 的原始 JSON 响应
   Future<Map<String, dynamic>?> analyze({
     required String base64Image,
+    required String app,
     required String task,
+    bool fastNavigation = true,
     bool includeOcrEvidence = false,
     int? imageWidth,
     int? imageHeight,
@@ -78,9 +81,10 @@ class UiTarsClient {
     try {
       final requestBody = <String, dynamic>{
         'image': 'data:image/jpeg;base64,$base64Image',
+        'app': app,
         'task': '用户的目标是: "$task"。请识别当前页面，判断用户在完成目标过程中的哪一步。',
         'history': history,
-        'fast_navigation': true,
+        'fast_navigation': fastNavigation,
         'include_ocr_evidence': includeOcrEvidence,
       };
       if (imageWidth != null) {
@@ -91,7 +95,7 @@ class UiTarsClient {
       }
       final body = jsonEncode(requestBody);
 
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse(_baseUrl),
             headers: {'Content-Type': 'application/json'},
@@ -124,7 +128,7 @@ class UiTarsClient {
 
   Future<void> sendDiagnostic(Map<String, dynamic> event) async {
     try {
-      await http
+      await _client
           .post(
             Uri.parse(_diagnosticUrl),
             headers: {'Content-Type': 'application/json'},
@@ -146,7 +150,7 @@ class FrameChangeDetector {
   DateTime? get lastAnalyzeTime => _lastAnalyzeTime;
 
   FrameChangeDetector({Duration? minInterval})
-    : _minInterval = minInterval ?? const Duration(milliseconds: 500);
+    : _minInterval = minInterval ?? const Duration(milliseconds: 300);
 
   /// 判断是否需要分析新帧
   /// 返回 true 表示画面有变化且距上次分析已过间隔

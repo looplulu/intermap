@@ -370,7 +370,9 @@ class AppViewModel extends ChangeNotifier {
 
     final result = await _trainingApi.analyze(
       base64Image: base64Frame,
+      app: 'douyin',
       task: task,
+      fastNavigation: false,
       includeOcrEvidence: true,
       history: _trainingApiHistory.take(3).toList(),
     );

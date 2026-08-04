@@ -114,7 +114,7 @@ void main() {
     );
 
     expect(decision?.pageKey, 'android_launcher');
-    expect(decision?.guidance, '点屏幕上的抖音图标。');
+    expect(decision?.guidance, '找到黑色方形里有彩色音符、下方写着“抖音”的图标，点一下。');
   });
 
   test('fast navigation leaves unknown screens to cloud analysis', () {
@@ -141,7 +141,21 @@ void main() {
     );
 
     expect(decision?.pageKey, 'douyin_profile');
-    expect(decision?.guidance, '点页面中间左侧的“我的订单”。');
+    expect(decision?.guidance, '点页面中间偏左、购物车图标下方写着“我的订单”的入口。');
+  });
+
+  test('fast navigation never sends refund users to after-sales list', () {
+    final resolver = FastNavigationResolver(HDMap());
+
+    final decision = resolver.resolve(
+      texts: const ['我的订单', '全部订单', '退款/售后'],
+      app: 'douyin',
+      task: 'refund',
+      style: GuidanceStyle.concise,
+    );
+
+    expect(decision?.pageKey, 'douyin_order_center');
+    expect(decision?.guidance, '点页面里的“全部订单”，不要点“退款/售后”。');
   });
 
   test('fast navigation uses verified all-orders correction', () {
@@ -155,7 +169,7 @@ void main() {
     );
 
     expect(decision?.pageKey, 'douyin_all_orders');
-    expect(decision?.guidance, '选择你要退款的商品。');
+    expect(decision?.guidance, '你自己找到想退款的那笔订单，再点订单里的商品。');
   });
 
   test('fast navigation handles instant refund without cloud analysis', () {

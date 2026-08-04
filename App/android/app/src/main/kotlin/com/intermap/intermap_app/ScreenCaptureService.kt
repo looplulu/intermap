@@ -36,7 +36,7 @@ class ScreenCaptureService : Service() {
         /** 截屏回调，通过静态变量让 MainActivity 传递给 EventChannel */
         var onFrameCaptured: ((String) -> Unit)? = null
 
-        private const val MIN_FRAME_INTERVAL_MS = 500L
+        private const val MIN_FRAME_INTERVAL_MS = 300L
 
         @Volatile
         var isRunning = false

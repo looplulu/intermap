@@ -229,6 +229,7 @@ function appendNavigationDiagnostic(input) {
     "http_status",
     "page_name",
     "page_key",
+    "guidance",
     "action_type",
     "confidence",
     "reason",
@@ -406,6 +407,72 @@ function loadTaskFlows() {
   return taskFlows;
 }
 
+function normalizeAppKey(value) {
+  const app = String(value || "").toLowerCase();
+  if (app.includes("douyin") || app.includes("抖音")) return "douyin";
+  if (app.includes("taobao") || app.includes("淘宝")) return "taobao";
+  if (app.includes("jd") || app.includes("京东")) return "jd";
+  return app.replace(/[^a-z0-9\u4e00-\u9fff]+/g, "");
+}
+
+function sameTrainingPage(a, b) {
+  const left = normalizePageName(a);
+  const right = normalizePageName(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function mergeTrainingPaths(paths) {
+  const ordered = paths
+    .filter(path => Array.isArray(path) && path.length > 0)
+    .sort((a, b) => {
+      const score = path => path.length * 10
+        + path.filter(step => step.action).length
+        + path.filter(step => step.is_correction).length * 3;
+      return score(b) - score(a);
+    });
+  if (ordered.length === 0) return [];
+
+  let canonical = ordered[0].map(step => ({ ...step }));
+  for (const candidate of ordered.slice(1)) {
+    let overlap = null;
+    for (let candidateIndex = 0; candidateIndex < candidate.length; candidateIndex++) {
+      for (let canonicalIndex = 0; canonicalIndex < canonical.length; canonicalIndex++) {
+        if (!sameTrainingPage(candidate[candidateIndex].page, canonical[canonicalIndex].page)) continue;
+        overlap = { candidateIndex, canonicalIndex };
+        break;
+      }
+      if (overlap) break;
+    }
+    if (!overlap) continue;
+
+    for (const step of candidate) {
+      const target = canonical.find(item => sameTrainingPage(item.page, step.page));
+      if (!target) continue;
+      if ((step.is_correction && step.action) || (!target.action && step.action)) {
+        target.action = step.action;
+      }
+      if (step.is_correction) target.is_correction = true;
+    }
+
+    if (overlap.canonicalIndex === 0 && overlap.candidateIndex > 0) {
+      canonical = candidate
+        .slice(0, overlap.candidateIndex)
+        .map(step => ({ ...step }))
+        .concat(canonical);
+    }
+    if (
+      overlap.canonicalIndex === canonical.length - 1 &&
+      overlap.candidateIndex < candidate.length - 1
+    ) {
+      canonical = canonical.concat(
+        candidate.slice(overlap.candidateIndex + 1).map(step => ({ ...step }))
+      );
+    }
+  }
+  return canonical;
+}
+
 function buildTaskFlows() {
   try {
     const sessionsDir = path.join(DATA_DIR, "training_sessions");
@@ -420,6 +487,7 @@ function buildTaskFlows() {
       if (!fs.existsSync(eventsFile)) continue;
       const lines = fs.readFileSync(eventsFile, "utf8").split("\n");
       let sessionGoal = "";
+      let sessionApp = "";
       let steps = [];
 
       for (const line of lines) {
@@ -427,6 +495,10 @@ function buildTaskFlows() {
         try {
           const evt = JSON.parse(line);
           const payload = evt.payload || {};
+
+          if (!sessionApp) {
+            sessionApp = normalizeAppKey(payload.app_key || evt.app || "");
+          }
 
           if (evt.event_type === "train_step_corrected" || evt.event_type === "train_step_confirmed") {
             const goal = String(payload.goal || sessionGoal || "").trim();
@@ -444,7 +516,7 @@ function buildTaskFlows() {
       }
 
       if (steps.length > 0 && sessionGoal) {
-        sessionGoals[sid] = { goal: sessionGoal, steps: steps };
+        sessionGoals[sid] = { goal: sessionGoal, app: sessionApp, steps: steps };
       }
     }
 
@@ -459,43 +531,30 @@ function buildTaskFlows() {
         .sort((a, b) => (a.step_count || 0) - (b.step_count || 0))
         .map(s => ({
           page: s.page,
-          action: s.verified ? s.feedback_note : s.action,
+          action: s.feedback_note || s.action,
           is_correction: s.feedback_type === "wrong_action",
         }));
 
-      if (!goalFlows[goal]) {
-        goalFlows[goal] = { goal: goal, paths: [], total_runs: 0 };
+      const flowKey = `${normalizeAppKey(data.app)}::${goal}`;
+      if (!goalFlows[flowKey]) {
+        goalFlows[flowKey] = { goal: goal, app: normalizeAppKey(data.app), paths: [], total_runs: 0 };
       }
-      goalFlows[goal].paths.push(path);
-      goalFlows[goal].total_runs++;
+      goalFlows[flowKey].paths.push(path);
+      goalFlows[flowKey].total_runs++;
     }
 
     // For each goal, pick the longest verified path as canonical
     const flows = [];
-    for (const [goal, data] of Object.entries(goalFlows)) {
-      // Merge all paths: prefer corrected actions (feedback_note) over raw AI actions
-      const stepMap = {}; // step_index -> { page, best_action, correction_count }
-      for (const p of data.paths) {
-        p.forEach((step, i) => {
-          if (!stepMap[i]) stepMap[i] = { page: step.page, best_action: step.action, correction_count: 0 };
-          // Prefer corrected actions (human-verified)
-          if (step.is_correction && step.action) {
-            stepMap[i].best_action = step.action;
-            stepMap[i].correction_count++;
-          }
-          // Keep the most descriptive page name
-          if (step.page && step.page.length > (stepMap[i].page || "").length) {
-            stepMap[i].page = step.page;
-          }
-        });
-      }
-
-      const canonicalPath = Object.keys(stepMap)
-        .sort((a, b) => parseInt(a) - parseInt(b))
-        .map(i => stepMap[i]);
+    for (const data of Object.values(goalFlows)) {
+      const canonicalPath = mergeTrainingPaths(data.paths).map(step => ({
+        page: step.page,
+        best_action: step.action,
+        correction_count: step.is_correction ? 1 : 0,
+      }));
 
       flows.push({
-        goal: goal,
+        goal: data.goal,
+        app: data.app,
         steps: canonicalPath,
         total_runs: data.total_runs,
         step_count: canonicalPath.length,
@@ -512,20 +571,33 @@ function buildTaskFlows() {
   }
 }
 
-function findBestFlow(goal) {
+function findBestFlow(goal, app) {
   const data = loadTaskFlows();
   if (!data || !data.flows) return null;
 
   const goalLower = (goal || "").toLowerCase().trim();
   if (!goalLower) return null;
+  const appKey = normalizeAppKey(app);
+  const candidates = data.flows.filter(flow => {
+    const flowApp = normalizeAppKey(flow.app);
+    return !appKey || !flowApp || appKey === flowApp;
+  });
 
   // Exact match
-  for (const flow of data.flows) {
+  for (const flow of candidates) {
     if (flow.goal.toLowerCase() === goalLower) return flow;
   }
 
+  const refundWords = ["退款", "退货"];
+  if (refundWords.some(word => goalLower.includes(word))) {
+    const refundFlow = candidates.find(flow =>
+      refundWords.some(word => String(flow.goal || "").includes(word))
+    );
+    if (refundFlow) return refundFlow;
+  }
+
   // Keyword match: check if goal contains key words from flow
-  for (const flow of data.flows) {
+  for (const flow of candidates) {
     const flowWords = flow.goal.split(/[\s,，、]+/).filter(w => w.length >= 2);
     const matched = flowWords.filter(w => goalLower.includes(w));
     if (matched.length >= 1 && matched.length / flowWords.length >= 0.5) return flow;
@@ -761,6 +833,7 @@ const server = http.createServer(async (req, res) => {
         await new Promise(r => setTimeout(r, waitTime));
       }
       const history = data.history || []; // array of previous messages [{role, content}]
+      const app = normalizeAppKey(data.app || "");
       const imageWidth = data.image_width || 0;
       const imageHeight = data.image_height || 0;
       // Demo navigation must stay responsive. Training explicitly opts in to
@@ -775,7 +848,8 @@ const server = http.createServer(async (req, res) => {
       // Try to find a verified task flow matching the user's goal
       const goalMatch = task.match(/用户的目标是[:：]?\s*"([^"]+)"/);
       const userGoal = goalMatch ? goalMatch[1].trim() : task.trim();
-      const matchedFlow = findBestFlow(userGoal);
+      const matchedFlow = findBestFlow(userGoal, app);
+      const isDouyinRefund = app === "douyin" && /退款|退货/.test(userGoal);
 
       let enrichedTask = task;
       if (ocrTexts.length > 0) {
@@ -786,7 +860,7 @@ const server = http.createServer(async (req, res) => {
         }
         enrichedTask += "\nOCR中的小数点、金额和数量必须原样保留。视觉结果与OCR冲突时，仔细查看截图二次核对，不要擅自去掉小数点。\n";
       }
-      if (matchedFlow) {
+      if (matchedFlow && !isDouyinRefund) {
         // Inject verified path as step-by-step guidance
         enrichedTask += '\n\n## 已验证的操作路径（用户已纠正确认，请按此路径引导）：\n';
         enrichedTask += `目标: ${matchedFlow.goal}（用户验证了${matchedFlow.total_runs}次）\n`;
@@ -808,12 +882,18 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+      if (isDouyinRefund) {
+        enrichedTask += "\n\n## 已验证的抖音退款路径，不得改道\n";
+        enrichedTask += "首页→点右下角‘我’；个人主页→点购物车图标‘我的订单’；";
+        enrichedTask += "订单入口→点‘全部订单’，禁止点‘退款/售后’；";
+        enrichedTask += "全部订单→让用户自己选想退款的订单；订单详情→点‘申请退款’。\n";
+      }
 
       // Build system prompt using UI-TARS phone template
       const instruction = enrichedTask;
       const language = 'Chinese';
       let systemPrompt = fastNavigation
-        ? `根据手机截图和用户目标给出下一步。只输出两行，不解释：\n页面名: 稳定简短的页面名\n操作: 直接说明点击或滑动的位置、元素和可见文字，20字左右\n同一页面始终使用同一页面名。看不清金额时不要猜测或复述。\n用户目标：${instruction}`
+        ? `根据手机截图和用户目标给出下一步。只输出两行，不解释：\n页面名: 稳定简短的页面名\n操作: 说清目标在屏幕的方位、图标外观和旁边的可见文字，30到45字；不能只说“点某按钮”\n例如：点击屏幕中间偏下、黑色方形里有彩色音符的“抖音”图标\n例如：点击页面中间偏左、购物车图标下方写着“我的订单”的入口\n同一页面始终使用同一页面名。看不清金额时不要猜测或复述。\n用户目标：${instruction}`
         : `You are a GUI agent helping an elderly user navigate a phone app. You are given a task and screenshots. You need to analyze the current screen and suggest the next action.\n## Output Format\n\`\`\`\nThought: ...\nAction: ...\n\`\`\`\n\n## Action Space\nclick(point='<point>x1 y1</point>')\nlong_press(point='<point>x1 y1</point>')\ntype(content='')\nscroll(point='<point>x1 y1</point>', direction='down or up or right or left')\nopen_app(app_name='')\ndrag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')\npress_home()\npress_back()\nfinished(content='')\n\n## CRITICAL RULES for Thought part (use ${language}):\n1. 第一行写: 页面名: XXX（简洁的页面名称，如"抖音首页"、"抖音个人主页"）\n2. 第二行写: 操作: 用通俗易懂的文字描述下一步操作，必须说清楚：在屏幕的什么位置（如左上角、右下角、中间偏下）、是什么元素（按钮、图标、文字链接）、上面写着什么字或画着什么图案。例如："点击右下角的'我'标签"、"点击左上角的返回箭头"、"向上滑动屏幕查看更多商品"。\n3. 绝对不要在Thought中输出坐标数字。\n4. 页面名要简洁稳定，同一个页面每次用相同的名字。\n\n## User Instruction\n${instruction}`;
       systemPrompt += "\n\n## 精度规则\n";
       systemPrompt += "5. 涉及金额时，只有看清小数点后才能提及；导航语音无需复述金额。\n";
@@ -940,6 +1020,10 @@ const server = http.createServer(async (req, res) => {
           thought,
           "页面名",
           ["操作", "关键文字", "金额"]
+        ) || extractThoughtField(
+          thought,
+          "页面",
+          ["操作", "关键文字", "金额"]
         ),
         ocr_texts: ocrTexts,
         ocr_items: ocrEvidence.items,
@@ -966,7 +1050,11 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { ok: false, error: "not found" });
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`intermap-capture listening on 127.0.0.1:${PORT}`);
-  console.log(`data dir: ${DATA_DIR}`);
-});
+if (require.main === module) {
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log(`intermap-capture listening on 127.0.0.1:${PORT}`);
+    console.log(`data dir: ${DATA_DIR}`);
+  });
+}
+
+module.exports = { mergeTrainingPaths, normalizeAppKey };
