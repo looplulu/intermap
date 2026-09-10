@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 
 import '../models/accessibility_event.dart';
 
@@ -14,7 +13,8 @@ class AccessibilityServiceManager {
   final List<AccessibilityEventData> _eventBuffer = [];
 
   /// 我们自己的 EventChannel，与插件使用相同的 channel name
-  static const _eventChannel = EventChannel('x-slayer/accessibility_event');
+  static const _eventChannel = EventChannel('com.intermap/accessibility_event');
+  static const _nativeChannel = MethodChannel('com.intermap/app');
 
   /// 去抖后的事件回调
   void Function(AccessibilityEventData event)? onPageEvent;
@@ -28,11 +28,11 @@ class AccessibilityServiceManager {
   bool isListening = false;
 
   Future<bool> checkPermission() async {
-    return await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    return await _nativeChannel.invokeMethod<bool>('trainingPermission') ?? false;
   }
 
   Future<void> requestPermission() async {
-    await FlutterAccessibilityService.requestAccessibilityPermission();
+    await _nativeChannel.invokeMethod('requestTrainingPermission');
   }
 
   void startListening() {

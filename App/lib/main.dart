@@ -15,6 +15,7 @@ import 'services/screen_capture_service.dart';
 import 'services/screen_nav_session.dart';
 import 'services/tts_service.dart';
 import 'services/training_session.dart';
+import 'services/training_evidence_upload.dart';
 import 'data/douyin_refund_flow.dart';
 
 @pragma('vm:entry-point')
@@ -68,6 +69,50 @@ class AppViewModel extends ChangeNotifier {
     minInterval: const Duration(seconds: 2),
   );
   final TrainingSessionManager _trainManager = TrainingSessionManager();
+  final TrainingEvidenceUpload _evidenceUpload = TrainingEvidenceUpload();
+  Map<String, dynamic> _evidenceState = {};
+  Timer? _evidenceTimer;
+  bool _nativeTraining = false;
+  bool _trainingStarting = false;
+  bool get trainingStarting => _trainingStarting;
+  String get lastTrainingAction =>
+      _evidenceState['last_action_label']?.toString() ?? '';
+  String get evidenceCaptureState =>
+      _evidenceState['capture_state']?.toString() ?? '';
+  Future<void> retryTrainingEvidence(String password) async {
+    if (!await _verifyTrainingPassword(password)) {
+      _uploadStatus = '训练密码验证未通过';
+      notifyListeners();
+      return;
+    }
+    _trainingPassword = password;
+    _evidenceUpload.onChange = () {
+      _uploadStatus = _evidenceUpload.message;
+      notifyListeners();
+    };
+    final state = await _nativeChannel.invokeMapMethod<String, dynamic>(
+      'trainingStatus',
+    );
+    await _evidenceUpload.sync(
+      password,
+      activeSession: state?['active'] == true
+          ? state!['session_id'] as String?
+          : null,
+    );
+    _evidenceTimer ??= Timer.periodic(const Duration(seconds: 3), (_) async {
+      final current = await _nativeChannel.invokeMapMethod<String, dynamic>(
+        'trainingStatus',
+      );
+      unawaited(
+        _evidenceUpload.sync(
+          _trainingPassword,
+          activeSession: current?['active'] == true
+              ? current!['session_id'] as String?
+              : null,
+        ),
+      );
+    });
+  }
 
   /// MethodChannel 用于调用原生功能
   static const _nativeChannel = MethodChannel('com.intermap/app');
@@ -114,8 +159,12 @@ class AppViewModel extends ChangeNotifier {
   TrainSessionStatus get trainStatus => _trainManager.status;
   String get trainLog => _trainLog;
   String get uploadStatus => _uploadStatus;
-  int get trainEventCount => _trainManager.eventCount;
-  int get trainNodeCount => _trainManager.nodeCount;
+  int get trainEventCount => _nativeTraining
+      ? (_evidenceState['interactions'] as int? ?? 0)
+      : _trainManager.eventCount;
+  int get trainNodeCount => _nativeTraining
+      ? (_evidenceState['frames'] as int? ?? 0)
+      : _trainManager.nodeCount;
   int get trainAnnotationCount => _trainManager.annotationCount;
   String? get trainCurrentNode => _trainManager.currentNodeId;
   List<InferredNode> get trainNodes => _trainManager.nodes;
@@ -192,6 +241,11 @@ class AppViewModel extends ChangeNotifier {
     required String app,
     required String task,
   }) async {
+    if (_trainManager.status == TrainSessionStatus.recording ||
+        _trainManager.status == TrainSessionStatus.paused) {
+      _tts.speak('请先结束训练采集，再开始演示。');
+      return;
+    }
     _currentGuidance = '';
     _currentRisks = [];
 
@@ -288,68 +342,166 @@ class AppViewModel extends ChangeNotifier {
     bool useA11y = false,
     String mode = 'learn',
   }) async {
-    final passwordVerified = await _verifyTrainingPassword(password);
-    if (!passwordVerified) {
-      _uploadStatus = '训练密码不正确';
+    if (_trainingStarting ||
+        _trainManager.status == TrainSessionStatus.recording) {
+      return;
+    }
+    if (_screenNavActive || _trainManager.status == TrainSessionStatus.paused) {
+      _uploadStatus = '请先结束正在运行的导航或采集';
       notifyListeners();
       return;
     }
-    _trainingPassword = password;
-    await _retryPendingTrainingUploads(password);
-
-    final normalizedApp = app.trim().isEmpty ? 'douyin' : app.trim();
-    final normalizedTask = task.trim().isEmpty
-        ? (mode == 'learn' ? 'free_exploration' : 'douyin_goal_feedback')
-        : task.trim();
-
-    _trainingMode = mode;
-    _trainManager.reset();
-    _trainLog = '';
-    _uploadStatus = '';
-    _trainManager.start(
-      app: normalizedApp,
-      task: normalizedTask,
-      captureMode: useA11y ? 'android_a11y_gui' : 'android_screen',
-    );
-
-    if (useA11y) {
-      if (!a11yGranted) {
-        _trainManager.reset();
-        _tts.speak('请先开启无障碍服务');
+    _trainingStarting = true;
+    notifyListeners();
+    try {
+      final passwordVerified = await _verifyTrainingPassword(password);
+      if (!passwordVerified) {
+        _uploadStatus = '训练密码不正确';
+        notifyListeners();
         return;
       }
-    }
+      _trainingPassword = password;
+      if (useA11y) {
+        await _startNativeTraining(app, task, mode);
+        return;
+      }
+      await _retryPendingTrainingUploads(password);
 
-    _trainingApiHistory.clear();
-    _trainingFrameDetector.reset();
-    _screenTrainingAnalyzing = false;
-    _trainLog = useA11y
-        ? '无障碍 + GUI 联合训练启动中...\n$_trainLog'
-        : '录屏训练启动中...\n$_trainLog';
-    notifyListeners();
+      final normalizedApp = app.trim().isEmpty ? 'douyin' : app.trim();
+      final normalizedTask = task.trim().isEmpty
+          ? (mode == 'learn' ? 'free_exploration' : 'douyin_goal_feedback')
+          : task.trim();
 
-    final granted = await _trainingCapture.requestPermission();
-    if (!granted) {
-      if (useA11y) _a11yManager.stopListening();
+      _trainingMode = mode;
       _trainManager.reset();
-      _trainLog = '录屏训练启动失败（权限被拒绝）\n$_trainLog';
-      _tts.speak('请先允许录屏权限');
+      _trainLog = '';
+      _uploadStatus = '';
+      _trainManager.start(
+        app: normalizedApp,
+        task: normalizedTask,
+        captureMode: useA11y ? 'android_a11y_gui' : 'android_screen',
+      );
+
+      if (useA11y) {
+        if (!a11yGranted) {
+          _trainManager.reset();
+          _tts.speak('请先开启无障碍服务');
+          return;
+        }
+      }
+
+      _trainingApiHistory.clear();
+      _trainingFrameDetector.reset();
+      _screenTrainingAnalyzing = false;
+      _trainLog = useA11y
+          ? '无障碍 + GUI 联合训练启动中...\n$_trainLog'
+          : '录屏训练启动中...\n$_trainLog';
+      notifyListeners();
+
+      final granted = await _trainingCapture.requestPermission();
+      if (!granted) {
+        if (useA11y) _a11yManager.stopListening();
+        _trainManager.reset();
+        _trainLog = '录屏训练启动失败（权限被拒绝）\n$_trainLog';
+        _tts.speak('请先允许录屏权限');
+        return;
+      }
+
+      if (useA11y) {
+        _startA11yListening(navMode: false, moveToBackground: false);
+      }
+
+      _tts.speak(
+        mode == 'learn' ? '学习已开始，请正常操作抖音。' : '训练已开始，请按你的目标操作，我会记录页面和你的反馈。',
+      );
+      try {
+        await _nativeChannel.invokeMethod('moveToBackground');
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 800));
+      _trainingCapture.startListening(_onTrainingFrame);
+      notifyListeners();
+    } finally {
+      _trainingStarting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _startNativeTraining(
+    String app,
+    String task,
+    String mode,
+  ) async {
+    if (!await _a11yManager.checkPermission()) {
+      _uploadStatus = '请先在系统设置中开启小路无障碍服务';
+      await _a11yManager.requestPermission();
       return;
     }
-
-    if (useA11y) {
-      _startA11yListening(navMode: false, moveToBackground: false);
-    }
-
-    _tts.speak(
-      mode == 'learn' ? '学习已开始，请正常操作抖音。' : '训练已开始，请按你的目标操作，我会记录页面和你的反馈。',
-    );
+    _evidenceUpload.onChange = () {
+      _uploadStatus = _evidenceUpload.message;
+      notifyListeners();
+    };
     try {
+      final state = await _nativeChannel.invokeMapMethod<String, dynamic>(
+        'trainingStart',
+        {
+          'app': app.trim().isEmpty ? '抖音' : app.trim(),
+          'task': task.trim(),
+          'mode': mode,
+        },
+      );
+      _evidenceState = state ?? {};
+      if ((_evidenceState['error']?.toString() ?? '').isNotEmpty) {
+        _uploadStatus = _evidenceState['error'].toString();
+        return;
+      }
+      _nativeTraining = true;
+      final granted = await _trainingCapture.requestPermission();
+      if (!granted) {
+        await _nativeChannel.invokeMethod('trainingStop');
+        _uploadStatus = '未取得屏幕共享权限，没有开始操作采集';
+        return;
+      }
+      _trainManager.reset();
+      _trainManager.start(
+        app: app,
+        task: task.isEmpty ? 'free_exploration' : task,
+        captureMode: 'android_a11y_gui_v3',
+      );
+      _trainLog = '原生证据采集已启动，GUI 在云端异步分析。\n';
+      _uploadStatus = '证据保存在手机，等待云端确认';
+      _evidenceTimer?.cancel();
+      _evidenceTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+        final state = await _nativeChannel.invokeMapMethod<String, dynamic>(
+          'trainingStatus',
+        );
+        if (state != null) _evidenceState = state;
+        if (_evidenceState['paused'] == true &&
+            _trainManager.status == TrainSessionStatus.recording) {
+          _trainManager.pause();
+        }
+        final error = _evidenceState['error']?.toString() ?? '';
+        if (error.isNotEmpty) _trainLog = error;
+        notifyListeners();
+        unawaited(
+          _evidenceUpload.sync(
+            _trainingPassword,
+            activeSession: _evidenceState['active'] == true
+                ? _evidenceState['session_id'] as String?
+                : null,
+          ),
+        );
+      });
+      unawaited(
+        _evidenceUpload.sync(
+          _trainingPassword,
+          activeSession: _evidenceState['session_id'] as String?,
+        ),
+      );
+      _tts.speak('采集已开始，请正常操作$app。');
       await _nativeChannel.invokeMethod('moveToBackground');
-    } catch (_) {}
-    await Future.delayed(const Duration(milliseconds: 800));
-    _trainingCapture.startListening(_onTrainingFrame);
-    notifyListeners();
+    } on PlatformException catch (e) {
+      _uploadStatus = e.message ?? '无法启动采集';
+    }
   }
 
   void _onTrainingFrame(String base64Frame) {
@@ -432,6 +584,18 @@ class AppViewModel extends ChangeNotifier {
   }
 
   Future<void> stopTraining() async {
+    if (_nativeTraining) {
+      _evidenceState =
+          await _nativeChannel.invokeMapMethod<String, dynamic>(
+            'trainingStop',
+          ) ??
+          _evidenceState;
+      await _trainingCapture.stop();
+      _trainManager.stop();
+      await uploadTrainingData();
+      notifyListeners();
+      return;
+    }
     _a11yManager.stopListening();
     await _trainingCapture.stop();
     _trainingFrameDetector.reset();
@@ -444,8 +608,19 @@ class AppViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void pauseTraining() => _trainManager.pause();
-  void resumeTraining() => _trainManager.resume();
+  void pauseTraining() {
+    if (_nativeTraining) {
+      _nativeChannel.invokeMethod('trainingPause', {'paused': true});
+    }
+    _trainManager.pause();
+  }
+
+  void resumeTraining() {
+    if (_nativeTraining) {
+      _nativeChannel.invokeMethod('trainingPause', {'paused': false});
+    }
+    _trainManager.resume();
+  }
 
   void addAnnotation({
     required String action,
@@ -453,6 +628,14 @@ class AppViewModel extends ChangeNotifier {
     String targetType = 'text',
     String note = '',
   }) {
+    if (_nativeTraining) {
+      _nativeChannel.invokeMethod('trainingAnnotation', {
+        'action': action,
+        'target': target,
+        'targetType': targetType,
+        'note': note,
+      });
+    }
     _trainManager.addAnnotation(
       action: action,
       target: target,
@@ -462,11 +645,25 @@ class AppViewModel extends ChangeNotifier {
   }
 
   Future<String> saveTrainingData() async {
+    if (_nativeTraining) {
+      return _evidenceState['directory']?.toString() ?? '手机私有训练目录';
+    }
     return await _trainManager.saveToFile();
   }
 
   /// 上传训练数据到服务器
   Future<bool> uploadTrainingData() async {
+    if (_nativeTraining) {
+      await _evidenceUpload.sync(
+        _trainingPassword,
+        activeSession: _evidenceState['active'] == true
+            ? _evidenceState['session_id'] as String?
+            : null,
+      );
+      _uploadStatus = _evidenceUpload.message;
+      notifyListeners();
+      return _uploadStatus.contains('上传成功');
+    }
     _uploadStatus = '上传中...';
     notifyListeners();
 
@@ -620,6 +817,8 @@ class AppViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _evidenceTimer?.cancel();
+    _evidenceUpload.dispose();
     _stuckTimer?.cancel();
     _a11yManager.dispose();
     _trainingCapture.stop();
@@ -1736,7 +1935,7 @@ class TrainModeEntryPage extends StatelessWidget {
               iconBg: const Color(0xFFE8EAF6),
               iconColor: const Color(0xFF3949AB),
               title: '训练模式',
-              subtitle: '输入目标，系统导航，你来纠正和标注错误',
+              subtitle: '按目标操作，补充标注，云端整理交互证据',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const TrainRecordingPage(mode: 'train'),
@@ -1760,7 +1959,7 @@ class TrainRecordingPage extends StatefulWidget {
   const TrainRecordingPage({
     super.key,
     required this.mode,
-    this.useA11y = false,
+    this.useA11y = true,
   });
 
   @override
@@ -1780,7 +1979,7 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
   @override
   void initState() {
     super.initState();
-    _appCtrl.text = 'douyin';
+    _appCtrl.text = '抖音';
   }
 
   @override
@@ -1826,7 +2025,28 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
                     passwordCtrl: _passwordCtrl,
                     mode: widget.mode,
                     useA11y: widget.useA11y,
-                    onStart: () {
+                    onStart: () async {
+                      if (vm.trainingStarting) return;
+                      final consent = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('开始真机采集'),
+                          content: const Text(
+                            '将保存目标 App 的画面、控件结构和操作事件，并上传私有训练服务器；GUI 分析使用已配置的云端模型。画面可能包含个人信息，请使用测试账号，避开聊天、支付、身份证等敏感内容。可随时暂停或结束。',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('取消'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('同意并开始'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (consent != true) return;
                       vm.startTraining(
                         app: _appCtrl.text.trim(),
                         task: _taskCtrl.text.trim(),
@@ -1985,7 +2205,7 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('结束训练'),
-        content: const Text('结束训练后会自动生成候选流程。是否继续？'),
+        content: const Text('结束后会继续上传，服务器整理操作证据和待审核流程。是否继续？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -2048,7 +2268,7 @@ class _TrainStatusBar extends StatelessWidget {
           if (vm.trainStatus != TrainSessionStatus.idle) ...[
             _MiniStat(label: '事件', value: '${vm.trainEventCount}'),
             const SizedBox(width: 12),
-            _MiniStat(label: '节点', value: '${vm.trainNodeCount}'),
+            _MiniStat(label: '画面', value: '${vm.trainNodeCount}'),
             const SizedBox(width: 12),
             _MiniStat(label: '标注', value: '${vm.trainAnnotationCount}'),
           ],
@@ -2110,7 +2330,7 @@ class _SetupForm extends StatelessWidget {
             controller: appCtrl,
             decoration: const InputDecoration(
               labelText: '目标 App',
-              hintText: '默认 douyin，也可填 com.ss.android.ugc.aweme',
+              hintText: '手机上的应用名，例如抖音；也可填写包名',
               border: OutlineInputBorder(),
             ),
           ),
@@ -2119,7 +2339,7 @@ class _SetupForm extends StatelessWidget {
             controller: taskCtrl,
             decoration: InputDecoration(
               labelText: mode == 'learn' ? '操作主题（可选）' : '你的目标',
-              hintText: mode == 'learn' ? '不填就是自由探索抖音' : '例如：我要找到订单、我要联系客服',
+              hintText: mode == 'learn' ? '不填就是自由探索' : '例如：我要找到订单、我要联系客服',
               border: OutlineInputBorder(),
             ),
           ),
@@ -2141,10 +2361,24 @@ class _SetupForm extends StatelessWidget {
             width: double.infinity,
             height: 48,
             child: FilledButton.icon(
-              onPressed: onStart,
+              onPressed: context.watch<AppViewModel>().trainingStarting
+                  ? null
+                  : onStart,
               icon: const Icon(Icons.fiber_manual_record, color: Colors.red),
-              label: const Text('开始录制', style: TextStyle(fontSize: 16)),
+              label: Text(
+                context.watch<AppViewModel>().trainingStarting
+                    ? '正在启动...'
+                    : '开始录制',
+                style: const TextStyle(fontSize: 16),
+              ),
             ),
+          ),
+          TextButton.icon(
+            onPressed: () => context.read<AppViewModel>().retryTrainingEvidence(
+              passwordCtrl.text,
+            ),
+            icon: const Icon(Icons.cloud_upload_outlined),
+            label: const Text('验证密码并补传已有记录'),
           ),
           const SizedBox(height: 12),
           Container(
@@ -2154,7 +2388,7 @@ class _SetupForm extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Text(
-              '提示：开始后按系统提示授权，然后切到抖音正常操作。看不准或图标无文字时，回到小路补一条人工标注。',
+              'vivo Y300 Pro：开启小路无障碍并允许共享整个屏幕。保持竖屏；后台高耗电设置允许小路运行。回到小路可暂停或标注最近一步。',
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
           ),
@@ -2199,6 +2433,23 @@ class _RecordingBody extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            '最近操作：${vm.lastTrainingAction.isEmpty ? "等待目标 App 操作" : vm.lastTrainingAction}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(switch (vm.evidenceCaptureState) {
+            'outside_selected_app' => '已离开目标 App，画面采集等待中',
+            'window_structure_unavailable' => '页面结构不完整，暂停画面保存以避免采集敏感输入',
+            'accessibility_disconnected' => '无障碍已断开，请重新开启',
+            'paused' => '采集暂停',
+            _ => '操作位置：无障碍控件范围；GUI 在云端分析',
+          }),
+          const SizedBox(height: 8),
+          const Text(
+            '标注绑定最近一次已记录操作。页面和流程在云端整理后核实。',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           if (vm.trainCurrentNode != null)
             Container(
               width: double.infinity,

@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 悬浮窗权限（引导覆盖层） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:allowBackup="false"
         android:label="小路"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
@@ -44,6 +45,9 @@
         <!-- 无障碍服务声明 -->
         <service
             android:name="slayer.accessibility.service.flutter_accessibility_service.AccessibilityListener"
+            tools:node="remove" />
+        <service
+            android:name=".TrainingAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false">
             <intent-filter>
@@ -60,6 +64,10 @@
     </application>
 
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="accessibility_service_description">小路 - 帮助您在App中完成操作导航的辅助工具。需要监听界面变化以提供实时语音引导。</string>
+    <string name="accessibility_service_description">小路训练采集：记录选定App的点击、控件范围与页面结构，配合录屏建立交互地图。不自动点击。仅在您开始训练后保存证据。</string>
 </resources>

@@ -38,6 +38,46 @@ class MainActivity : FlutterActivity() {
                     moveTaskToBack(true)
                     result.success(null)
                 }
+                "trainingPermission" -> result.success(TrainingAccessibilityService.connected)
+                "requestTrainingPermission" -> {
+                    startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    result.success(null)
+                }
+                "trainingRoot" -> result.success(java.io.File(filesDir, "training_v3").absolutePath)
+                "trainingStatus" -> result.success(TrainingRecorder.status())
+                "trainingPause" -> {
+                    TrainingRecorder.setPaused(call.argument<Boolean>("paused") ?: true)
+                    result.success(null)
+                }
+                "trainingStart" -> {
+                    val name = call.argument<String>("app").orEmpty().trim()
+                    val aliases = mapOf("douyin" to "com.ss.android.ugc.aweme", "抖音" to "com.ss.android.ugc.aweme",
+                        "微信" to "com.tencent.mm", "wechat" to "com.tencent.mm", "淘宝" to "com.taobao.taobao",
+                        "京东" to "com.jingdong.app.mall", "拼多多" to "com.xunmeng.pinduoduo")
+                    val target = aliases[name.lowercase()] ?: name
+                    val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                    val matches = packageManager.queryIntentActivities(launch, 0).filter {
+                        it.activityInfo.packageName == target || it.loadLabel(packageManager).toString() == name
+                    }.distinctBy { it.activityInfo.packageName }
+                    if (!TrainingAccessibilityService.connected) result.error("permission", "请开启小路无障碍服务", null)
+                    else if (matches.size != 1) result.error("app", "未找到唯一应用，请填写手机上的完整应用名或包名", null)
+                    else {
+                        val pkg = matches.first().activityInfo.packageName
+                        val info = packageManager.getPackageInfo(pkg, 0)
+                        val metadata = mapOf("app" to name, "package_name" to pkg,
+                            "app_label" to matches.first().loadLabel(packageManager).toString(),
+                            "target_version" to info.versionName,
+                            "target_version_code" to if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong(),
+                            "mode" to call.argument<String>("mode"), "task" to call.argument<String>("task"))
+                        TrainingRecorder.start(this, metadata) { state -> mainHandler.post { result.success(state) } }
+                    }
+                }
+                "trainingStop" -> TrainingRecorder.stop { state -> mainHandler.post { result.success(state) } }
+                "trainingAnnotation" -> {
+                    val payload = mapOf("action" to call.argument<String>("action"), "target" to call.argument<String>("target"),
+                        "target_type" to call.argument<String>("targetType"), "note" to call.argument<String>("note"))
+                    TrainingRecorder.annotation(payload) { state -> mainHandler.post { result.success(state) } }
+                }
                 "requestScreenCapture" -> {
                     pendingResult = result
                     requestScreenCapture()
@@ -61,6 +101,13 @@ class MainActivity : FlutterActivity() {
         }
 
         // 截屏帧 EventChannel
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "com.intermap/accessibility_event")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    TrainingAccessibilityService.onEvent = { event -> mainHandler.post { events.success(event) } }
+                }
+                override fun onCancel(arguments: Any?) { TrainingAccessibilityService.onEvent = null }
+            })
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CAPTURE_EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -85,7 +132,10 @@ class MainActivity : FlutterActivity() {
     private fun requestScreenCapture() {
         val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         @Suppress("DEPRECATION")
-        startActivityForResult(mgr.createScreenCaptureIntent(), REQUEST_CODE_SCREEN_CAPTURE)
+        val permission = if (Build.VERSION.SDK_INT >= 34) {
+            mgr.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else mgr.createScreenCaptureIntent()
+        startActivityForResult(permission, REQUEST_CODE_SCREEN_CAPTURE)
     }
 
     @Deprecated("Use registerForActivityResult")

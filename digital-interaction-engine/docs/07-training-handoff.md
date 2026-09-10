@@ -1,5 +1,11 @@
 # Live Training Handoff
 
+> Android 1.0.18 supersedes the legacy Android paragraphs below. The primary
+> device is vivo Y300 Pro; native event/frame evidence, authenticated chunked
+> upload and cloud review now use `android_training_v3/`. Read
+> [11-android-training-v3.md](11-android-training-v3.md) first for Android work.
+> The web/iPhone Mirroring workflow below remains supplementary.
+
 This document is the handoff for the next AI or engineer continuing the
 Intermap training work.
 

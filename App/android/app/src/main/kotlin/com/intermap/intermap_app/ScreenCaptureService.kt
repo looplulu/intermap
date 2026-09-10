@@ -128,7 +128,11 @@ class ScreenCaptureService : Service() {
         val data: Intent = intent.getParcelableExtra(EXTRA_DATA)
             ?: return stopAndReturn()
 
-        setupMediaProjection(resultCode, data)
+        try { setupMediaProjection(resultCode, data) }
+        catch (e: Exception) {
+            TrainingRecorder.captureStopped()
+            return stopAndReturn()
+        }
         return START_NOT_STICKY
     }
 
@@ -177,10 +181,16 @@ class ScreenCaptureService : Service() {
                 var bitmap: Bitmap? = null
                 try {
                     bitmap = imageToBitmap(image, width, height)
-                    val base64 = bitmapToBase64(bitmap, 65)
-                    onFrameCaptured?.invoke(base64)
+                    if (TrainingRecorder.active) {
+                        @Suppress("DEPRECATION")
+                        val rotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+                        TrainingRecorder.frame(bitmap, SystemClock.uptimeMillis(), rotation)
+                    } else {
+                        val base64 = bitmapToBase64(bitmap, 65)
+                        onFrameCaptured?.invoke(base64)
+                    }
                 } catch (e: Exception) {
-                    // 忽略偶发的帧处理错误
+                    TrainingRecorder.record("capture_gap", mapOf("reason" to "frame_error", "error" to e.javaClass.simpleName))
                 } finally {
                     bitmap?.recycle()
                     image.close()
@@ -230,6 +240,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun cleanup() {
+        TrainingRecorder.captureStopped()
         isRunning = false
         lastFrameAtMs = 0L
         abandonAudioFocus()

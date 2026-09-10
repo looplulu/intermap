@@ -1,0 +1,16 @@
+[Unit]
+Description=Intermap capture and training evidence API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/intermap-capture-server
+ExecStart=/var/www/intermap-capture-server/start.sh
+Restart=always
+RestartSec=3
+UMask=0077
+StandardOutput=append:/var/log/intermap-capture.log
+StandardError=append:/var/log/intermap-capture.log
+
+[Install]
+WantedBy=multi-user.target

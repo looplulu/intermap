@@ -11,6 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const { TrainingEvidenceStore } = require('./training_evidence');
 
 const PORT = Number(process.env.PORT || 3011);
 const ARK_API_KEY = process.env.ARK_API_KEY || '';
@@ -21,6 +22,16 @@ const BUILDER_SCRIPT = process.env.INTERMAP_BUILDER_SCRIPT || path.join(__dirnam
 const PYTHON_BIN = process.env.INTERMAP_PYTHON_BIN || "/opt/miniconda3/envs/ocr/bin/python";
 const OCR_API_URL = process.env.INTERMAP_OCR_URL || "http://127.0.0.1:18000/api/analyze_base64";
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
+const evidenceStore = new TrainingEvidenceStore(DATA_DIR);
+let evidenceWorker = null;
+function processEvidence() {
+  if (evidenceWorker) return;
+  const script = process.env.INTERMAP_EVIDENCE_PROCESSOR || path.join(__dirname, 'process_android_evidence.py');
+  if (!fs.existsSync(script)) return;
+  evidenceWorker = spawn(PYTHON_BIN, [script, '--root', evidenceStore.root], {stdio: 'ignore'});
+  evidenceWorker.on('error', () => { evidenceWorker = null; });
+  evidenceWorker.on('close', () => { evidenceWorker = null; });
+}
 let buildInProgress = false;
 
 // ═══ Rate Limiting & Caching ═══
@@ -706,6 +717,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && (req.url === "/api/rebuild-knowledge" || req.url === "/rebuild-knowledge")) {
+    let auth;
+    try { auth = JSON.parse(await readBody(req)); } catch (_) { sendJson(res, 400, {ok: false}); return; }
+    if (!verifyTrainPassword(String(auth.password || ''))) { sendJson(res, 403, {ok: false}); return; }
     buildCorrectionsKnowledge();
     buildTaskFlows();
     const kb = loadCorrectionsKnowledge();
@@ -714,10 +728,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/training-evidence') {
+    try {
+      const data = JSON.parse(await readBody(req));
+      if (!verifyTrainPassword(String(data.password || ''))) {
+        sendJson(res, 403, {ok: false, error: 'invalid training password'}); return;
+      }
+      delete data.password;
+      const receipt = evidenceStore.handle(data);
+      sendJson(res, 200, receipt);
+      if (data.operation === 'finish' || data.operation === 'retry') processEvidence();
+    } catch (error) { sendJson(res, 400, {ok: false, error: String(error.message || error)}); }
+    return;
+  }
+
   if (req.method === "POST" && (req.url === "/events" || req.url === "/api/events")) {
     try {
       const body = await readBody(req);
       const event = JSON.parse(body);
+      if (!verifyTrainPassword(String(event.password || ''))) {
+        sendJson(res, 403, {ok: false, error: 'invalid training password'}); return;
+      }
       if (!event.session_id || !event.event_type) {
         sendJson(res, 400, { ok: false, error: "missing session_id or event_type" });
         return;
@@ -739,6 +770,7 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
+      delete event.password;
       const saved = appendEvent(event);
       if (event.event_type === "session_end") {
         buildReviewQueue();
@@ -1072,6 +1104,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
+  setInterval(processEvidence, 60000).unref();
+  processEvidence();
   server.listen(PORT, "127.0.0.1", () => {
     console.log(`intermap-capture listening on 127.0.0.1:${PORT}`);
     console.log(`data dir: ${DATA_DIR}`);

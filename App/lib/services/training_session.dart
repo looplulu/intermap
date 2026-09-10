@@ -165,7 +165,7 @@ class TrainingSessionManager {
       'annotation_count': _annotations.length,
     });
     _checkpointTimer?.cancel();
-    unawaited(saveToFile());
+    if (_captureMode != 'android_a11y_gui_v3') unawaited(saveToFile());
     onStatusChange?.call();
     _log('训练结束，共 ${_events.length} 个事件，${_nodes.length} 个节点');
   }
@@ -646,6 +646,7 @@ class TrainingSessionManager {
   }
 
   void _scheduleCheckpoint() {
+    if (_captureMode == 'android_a11y_gui_v3') return;
     _checkpointTimer?.cancel();
     _checkpointTimer = Timer(
       const Duration(milliseconds: 800),

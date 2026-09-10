@@ -4409,6 +4409,7 @@
       }
       eventSentCount++;
       var event = {
+        password: trainingUploadPassword,
         session_id: ensureCaptureSession(),
         event_type: type,
         timestamp: new Date().toISOString(),
@@ -6607,6 +6608,7 @@
     // Password Protection
     // ═══════════════════════════════════════════════════════════════
     var passwordCallback = null;
+    var trainingUploadPassword = '';
 
     function showPasswordModal(callback) {
       passwordCallback = callback || null;
@@ -6641,6 +6643,7 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.verified) {
+          trainingUploadPassword = password;
           document.getElementById('passwordOverlay').classList.remove('show');
           if (passwordCallback) {
             passwordCallback(true);
