@@ -30,6 +30,7 @@ def write(file, value):
 
 def build_review(records, metadata):
     frames = sorted((r for r in records if r['kind'] == 'frame'), key=lambda r: r['payload']['uptime_ms'])
+    outcome_records = [r for r in records if r['kind'] == 'task_outcome']
     actions = [r for r in records if r['kind'] == 'accessibility' and r['payload'].get('event_type') in (1, 2, 4096, 16)]
     actions.sort(key=lambda r: (r['payload']['event_uptime_ms'], r['seq']))
     gaps = [r for r in records if r['kind'] in ('capture_gap', 'pause')]
@@ -83,9 +84,21 @@ def build_review(records, metadata):
             edges.append(dict(from_node=before['payload']['sha256'], to_node=after['payload']['sha256'],
                               action_id=action['id'], outcome='same_pixels' if before['payload']['sha256'] == after['payload']['sha256'] else 'visual_change',
                               review_status='pending_review'))
+    task_outcome = None
+    if outcome_records:
+        claim = outcome_records[-1]
+        preceding = [f for f in frames if f['payload']['uptime_ms'] <= claim['uptime_ms']]
+        frame = preceding[-1] if preceding else None
+        task_outcome = dict(outcome=claim['payload']['outcome'],
+                            verification='user_report_only',
+                            event_id=claim['id'], wall_time_ms=claim.get('wall_time_ms'),
+                            last_action_id=claim['payload'].get('last_action_id'),
+                            frame=frame if frame and claim['uptime_ms'] - frame['payload']['uptime_ms'] <= 1500 else None,
+                            review_status='pending_review')
     return dict(schema_version=3, metadata=metadata, review_status='pending_review',
                 interactions=interactions, nodes=list(nodes.values()), edges=edges,
-                capture_gaps=gaps, frame_count=len(frames), record_count=len(records))
+                capture_gaps=gaps, task_outcome=task_outcome,
+                frame_count=len(frames), record_count=len(records))
 
 
 def infer(image, task, metadata, endpoint):

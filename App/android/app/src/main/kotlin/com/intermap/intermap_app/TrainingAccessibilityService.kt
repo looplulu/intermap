@@ -1,20 +1,139 @@
 package com.intermap.intermap_app
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.graphics.Rect
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Button
+import android.widget.Toast
+import kotlin.math.abs
 
 class TrainingAccessibilityService : AccessibilityService() {
     companion object {
         @Volatile var connected = false
         var onEvent: ((Map<String, Any?>) -> Unit)? = null
+        private var instance: TrainingAccessibilityService? = null
+        private val mainHandler = Handler(Looper.getMainLooper())
+
+        fun refreshCompletionOverlay() {
+            mainHandler.post { instance?.updateCompletionOverlay() }
+        }
     }
 
-    override fun onServiceConnected() { connected = true }
+    private var completionButton: Button? = null
+    private var completionParams: WindowManager.LayoutParams? = null
+
+    override fun onServiceConnected() {
+        connected = true
+        instance = this
+        updateCompletionOverlay()
+    }
     override fun onInterrupt() { TrainingRecorder.record("capture_gap", mapOf("reason" to "accessibility_interrupted")) }
-    override fun onDestroy() { connected = false; super.onDestroy() }
+    override fun onDestroy() {
+        hideCompletionOverlay()
+        instance = null
+        connected = false
+        super.onDestroy()
+    }
+
+    private fun updateCompletionOverlay() {
+        val visible = TrainingRecorder.active && !TrainingRecorder.paused &&
+            TrainingRecorder.canConfirmTask &&
+            TrainingRecorder.foregroundPackage == TrainingRecorder.selectedPackage
+        if (!visible) { hideCompletionOverlay(); return }
+        if (completionButton != null) return
+        val density = resources.displayMetrics.density
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.END or Gravity.BOTTOM
+            x = (16 * density).toInt()
+            y = (100 * density).toInt()
+        }
+        val button = Button(this).apply {
+            text = "任务完成"
+            contentDescription = "确认本次训练目标已经完成"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(43, 126, 62))
+            minHeight = (56 * density).toInt()
+            setPadding((18 * density).toInt(), 0, (18 * density).toInt(), 0)
+            setOnClickListener {
+                isEnabled = false
+                TrainingRecorder.confirmTaskCompleted { state ->
+                    mainHandler.post {
+                        val error = state["confirmation_error"] as? String
+                        if (error == null) {
+                            hideCompletionOverlay()
+                            Toast.makeText(this@TrainingAccessibilityService, "已记录任务完成，正在上传", Toast.LENGTH_SHORT).show()
+                        } else {
+                            isEnabled = true
+                            Toast.makeText(this@TrainingAccessibilityService, error, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+        var moved = false
+        button.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY
+                    startX = params.x; startY = params.y
+                    moved = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    if (abs(dx) > 12 * density || abs(dy) > 12 * density) moved = true
+                    if (moved) {
+                        params.x = (startX - dx).toInt().coerceAtLeast(0)
+                        params.y = (startY - dy).toInt().coerceAtLeast(0)
+                        (getSystemService(Context.WINDOW_SERVICE) as WindowManager).updateViewLayout(view, params)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) view.performClick()
+                    true
+                }
+                else -> true
+            }
+        }
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(button, params)
+            completionButton = button
+            completionParams = params
+        } catch (_: Exception) {
+            TrainingRecorder.record("capture_gap", mapOf("reason" to "completion_overlay_unavailable"))
+        }
+    }
+
+    private fun hideCompletionOverlay() {
+        val button = completionButton ?: return
+        completionButton = null
+        completionParams = null
+        try { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(button) }
+        catch (_: Exception) {}
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -25,8 +144,10 @@ class TrainingAccessibilityService : AccessibilityService() {
     }
 
     private fun capture(event: AccessibilityEvent) {
+        if (event.packageName?.toString() == packageName) return
         val root = rootInActiveWindow
         TrainingRecorder.foregroundPackage = root?.packageName?.toString().orEmpty()
+        updateCompletionOverlay()
         val recording = TrainingRecorder.active && !TrainingRecorder.paused
         if (recording && TrainingRecorder.foregroundPackage != TrainingRecorder.selectedPackage) {
             TrainingRecorder.privacyUnknown = true

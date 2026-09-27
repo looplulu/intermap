@@ -47,5 +47,16 @@ class EvidenceTest(unittest.TestCase):
                     payload=dict(action_id='e_2', target='三个点'))]
         self.assertEqual(build_review(records, {})['interactions'][0]['annotations'][0]['target'], '三个点')
 
+    def test_user_completion_stays_separate_from_verified_result(self):
+        records = [frame(1, 100), click(2, 200), frame(3, 500, 'b'),
+                   dict(id='e_4', seq=4, kind='task_outcome', uptime_ms=700, wall_time_ms=10000,
+                        payload=dict(outcome='user_confirmed_completed', last_action_id='e_2'))]
+        review = build_review(records, {'task': '申请退款'})
+        self.assertEqual(review['task_outcome']['outcome'], 'user_confirmed_completed')
+        self.assertEqual(review['task_outcome']['verification'], 'user_report_only')
+        self.assertEqual(review['task_outcome']['last_action_id'], 'e_2')
+        self.assertEqual(review['task_outcome']['frame']['id'], 'e_3')
+        self.assertEqual(review['edges'][0]['outcome'], 'visual_change')
+
 
 if __name__ == '__main__': unittest.main()

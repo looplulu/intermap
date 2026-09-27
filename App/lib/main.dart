@@ -475,6 +475,15 @@ class AppViewModel extends ChangeNotifier {
           'trainingStatus',
         );
         if (state != null) _evidenceState = state;
+        if (_evidenceState['active'] == false &&
+            (_trainManager.status == TrainSessionStatus.recording ||
+                _trainManager.status == TrainSessionStatus.paused)) {
+          _trainManager.stop();
+          await _trainingCapture.stop();
+          _trainLog = _evidenceState['task_outcome'] == 'user_confirmed_completed'
+              ? '已记录你确认任务完成，正在上传供复盘审核。'
+              : '采集已结束，正在上传。';
+        }
         if (_evidenceState['paused'] == true &&
             _trainManager.status == TrainSessionStatus.recording) {
           _trainManager.pause();
@@ -2027,6 +2036,13 @@ class _TrainRecordingPageState extends State<TrainRecordingPage> {
                     useA11y: widget.useA11y,
                     onStart: () async {
                       if (vm.trainingStarting) return;
+                      if (widget.mode == 'train' &&
+                          _taskCtrl.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先填写本次训练的目标')),
+                        );
+                        return;
+                      }
                       final consent = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(

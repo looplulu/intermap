@@ -28,6 +28,8 @@ object TrainingRecorder {
         private set
     @Volatile var selectedPackage = ""
         private set
+    @Volatile var canConfirmTask = false
+        private set
     @Volatile var foregroundPackage = ""
     @Volatile var maskedBounds: List<Rect> = emptyList()
     @Volatile var privacyUnknown = true
@@ -40,12 +42,14 @@ object TrainingRecorder {
     @Volatile private var lastActionLabel = ""
     @Volatile private var bytes = 0L
     @Volatile private var failure = ""
+    @Volatile private var taskOutcome = ""
     private var sequence = 0
     private var lastBlockedReason = ""
     private var droppedFrames = 0
     private var lastFrameTime = 0L
     private var lastFrameHash = ""
     private var previousFrameId: String? = null
+    private var lastFrameId: String? = null
     private var initialRotation: Int? = null
 
     fun start(context: Context, metadata: Map<String, Any?>, done: (Map<String, Any?>) -> Unit) {
@@ -56,10 +60,12 @@ object TrainingRecorder {
             folder = File(context.filesDir, "training_v3/$session").apply { mkdirs() }
             File(folder, "frames").mkdirs()
             sequence = 0; count = 0; frameCount = 0; interactionCount = 0; bytes = 0
-            lastActionId = null; lastActionLabel = ""; failure = ""; lastBlockedReason = ""
+            lastActionId = null; lastActionLabel = ""; failure = ""; taskOutcome = ""; lastBlockedReason = ""
             droppedFrames = 0; lastFrameTime = 0; lastFrameHash = ""; previousFrameId = null
+            lastFrameId = null
             initialRotation = null
             selectedPackage = metadata["package_name"].toString()
+            canConfirmTask = metadata["mode"] == "train" && (metadata["task"] as? String)?.isNotBlank() == true
             foregroundPackage = ""; privacyUnknown = true; maskedBounds = emptyList()
             paused = false
             val metrics = context.resources.displayMetrics
@@ -69,7 +75,7 @@ object TrainingRecorder {
                 "manufacturer" to Build.MANUFACTURER, "model" to Build.MODEL,
                 "android_version" to Build.VERSION.RELEASE, "sdk" to Build.VERSION.SDK_INT,
                 "density" to metrics.density, "font_scale" to context.resources.configuration.fontScale,
-                "app_version" to "1.0.18", "started_at_ms" to System.currentTimeMillis(),
+                "app_version" to "1.0.19", "started_at_ms" to System.currentTimeMillis(),
                 "position_capability" to "accessibility_source_bounds_not_touch_point",
                 "capture_policy" to "selected_app_sampled_frames_300ms_editable_masked"
             )
@@ -163,7 +169,7 @@ object TrainingRecorder {
                     "backpressure_drops" to droppedFrames
                 )
                 if (scaled !== copy) scaled.recycle()
-                append("frame", frame)
+                lastFrameId = append("frame", frame)
                 frameCount++; droppedFrames = 0; lastFrameTime = time
                 lastFrameHash = hash; previousFrameId = asset
             } catch (e: Exception) {
@@ -191,6 +197,7 @@ object TrainingRecorder {
             if (!value && failure.isNotEmpty()) return@post
             paused = value
             if (active) append(if (value) "pause" else "resume", emptyMap())
+            TrainingAccessibilityService.refreshCompletionOverlay()
         }
     }
 
@@ -199,6 +206,29 @@ object TrainingRecorder {
         failure = "屏幕采集已停止，请结束本次采集并重新授权"
         paused = true
         record("capture_gap", mapOf("reason" to "screen_capture_stopped"))
+        TrainingAccessibilityService.refreshCompletionOverlay()
+    }
+
+    fun confirmTaskCompleted(done: (Map<String, Any?>) -> Unit) {
+        handler.post {
+            if (!active || paused || !canConfirmTask || foregroundPackage != selectedPackage) {
+                done(status() + ("confirmation_error" to "请在目标应用的采集画面中确认完成"))
+                return@post
+            }
+            append("task_outcome", mapOf(
+                "outcome" to "user_confirmed_completed",
+                "verification" to "user_report_only",
+                "package_name" to foregroundPackage,
+                "last_action_id" to lastActionId,
+                "last_frame_id" to lastFrameId
+            ))
+            if (failure.isNotEmpty()) {
+                done(status() + ("confirmation_error" to failure))
+                return@post
+            }
+            taskOutcome = "user_confirmed_completed"
+            stop(done)
+        }
     }
 
     fun stop(done: (Map<String, Any?>) -> Unit) {
@@ -207,6 +237,8 @@ object TrainingRecorder {
                 append("session_end", mapOf("frame_count" to frameCount, "interaction_count" to interactionCount))
                 atomicJson(File(folder, "end.json"), mapOf("total_records" to count, "ended_at_ms" to System.currentTimeMillis()))
                 active = false
+                canConfirmTask = false
+                TrainingAccessibilityService.refreshCompletionOverlay()
             }
             done(status())
         }
@@ -216,6 +248,7 @@ object TrainingRecorder {
         "active" to active, "paused" to paused, "session_id" to session,
         "directory" to folder?.absolutePath, "records" to count, "frames" to frameCount,
         "interactions" to interactionCount, "bytes" to bytes, "error" to failure,
+        "task_outcome" to taskOutcome,
         "last_action_id" to lastActionId, "last_action_label" to lastActionLabel,
         "capture_state" to if (paused) "paused" else lastBlockedReason.ifEmpty { "capturing" },
         "accessibility_connected" to TrainingAccessibilityService.connected
