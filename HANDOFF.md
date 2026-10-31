@@ -1,5 +1,13 @@
 # 小路（InterMap）项目交接文档
 
+## 官网阶段 1.1.01
+
+2026-10-31 官网首页改为产品介绍、三步交互示意、当前试用场景、试用说明和常见问题。
+原首页迁到 `/intermap/workbench.html`，旧采集复盘仍为 `/intermap/training-review.html`。
+保留现有密码保护和全部训练/反馈数据；本次不修改 App，不重新生成 APK。
+已交付试用包仍为 1.1.00，官网阶段号见 `digital-interaction-demo/VERSION`。
+源码、后续更新与整目录替换部署见 `digital-interaction-demo/README.md`。
+
 ## 当前：1.1.00 联网试用版
 
 2026-10-31 用户确认改为 GUI + 模型推理的连续任务导航，先获得市场反馈，不再要求先建完整地图。

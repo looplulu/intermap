@@ -34,8 +34,10 @@ later from repeated paths and transition clusters.
 
 ## Production Surfaces
 
-- Public demo and training page:
+- Product website:
   `https://loop-lulu.com/intermap/`
+- Retained demo and training workbench:
+  `https://loop-lulu.com/intermap/workbench.html`
 - Static site directory:
   `/var/www/loop-lulu/intermap`
 - Capture/event service:
@@ -67,12 +69,12 @@ not contain screenshots, full OCR output, or the user's goal.
 The training page lives in:
 
 ```text
-digital-interaction-demo/index.html
+digital-interaction-demo/workbench.html
 ```
 
 Operator steps:
 
-1. Open `https://loop-lulu.com/intermap/`.
+1. Open `https://loop-lulu.com/intermap/workbench.html`.
 2. Switch to training mode.
 3. Enter the App name manually, for example `淘宝`.
 4. Choose the iPhone Mirroring window or a screen region containing it.
@@ -393,15 +395,10 @@ Highest-value next steps:
 
 ## Deployment Commands
 
-Deploy frontend:
+Deploy the product website together with the retained workbench and review page:
 
 ```bash
-rm -rf /tmp/intermap-demo-dist && mkdir -p /tmp/intermap-demo-dist/assets
-cp digital-interaction-demo/index.html /tmp/intermap-demo-dist/index.html
-cp digital-interaction-demo/assets/demo-data.js /tmp/intermap-demo-dist/assets/demo-data.js
-COPYFILE_DISABLE=1 tar -C /tmp/intermap-demo-dist -cf - . | \
-  ssh root@loop-lulu.com \
-  'rm -rf /var/www/loop-lulu/intermap && mkdir -p /var/www/loop-lulu/intermap && tar -C /var/www/loop-lulu/intermap -xf - && chown -R root:root /var/www/loop-lulu/intermap'
+bash digital-interaction-engine/server/deploy_site.sh
 ```
 
 Deploy capture server / builder:
