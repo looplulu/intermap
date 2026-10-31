@@ -20,6 +20,9 @@ class MainActivity : FlutterActivity() {
     private val APP_CHANNEL = "com.intermap/app"
     private val CAPTURE_EVENT_CHANNEL = "com.intermap/capture_event"
 
+    private var appBridge: MethodChannel? = null
+    private var companion: CompanionOverlay? = null
+    private var speechResult: MethodChannel.Result? = null
     private val REQUEST_CODE_SCREEN_CAPTURE = 2001
     private var pendingResult: MethodChannel.Result? = null
     private var captureEventSink: EventChannel.EventSink? = null
@@ -31,56 +34,65 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        companion = CompanionOverlay(this) { action, goal -> appBridge?.invokeMethod("companionAction", mapOf("action" to action, "goal" to goal)) }
+        ScreenCaptureService.onStopped = { mainHandler.post { appBridge?.invokeMethod("captureStopped", null) } }
         // App 通用 MethodChannel
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APP_CHANNEL).setMethodCallHandler { call, result ->
+        appBridge = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APP_CHANNEL)
+        appBridge!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "loadPendingFeedback" -> result.success(getSharedPreferences("consumer", MODE_PRIVATE).getString("pendingFeedback", "[]"))
+                "savePendingFeedback" -> {
+                    getSharedPreferences("consumer", MODE_PRIVATE).edit().putString("pendingFeedback",call.argument<String>("json") ?: "[]").commit()
+                    result.success(null)
+                }
+                "getEnvironment" -> {
+                    val metrics=resources.displayMetrics
+                    val douyin=try { packageManager.getPackageInfo("com.ss.android.ugc.aweme",0).versionName } catch (_: Exception) { null }
+                    result.success(mapOf("platform" to "android", "manufacturer" to Build.MANUFACTURER,
+                        "device_model" to Build.MODEL, "os_version" to Build.VERSION.RELEASE,
+                        "sdk" to Build.VERSION.SDK_INT, "width" to metrics.widthPixels,
+                        "height" to metrics.heightPixels, "density" to metrics.density,
+                        "douyin_version" to douyin, "app_version" to "1.1.00"))
+                }
+                "moveToForeground" -> { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); result.success(null) }
+                "loadSettings" -> {
+                    val p=getSharedPreferences("consumer", MODE_PRIVATE)
+                    result.success(mapOf("accepted" to p.getBoolean("accepted",false), "consent" to p.getBoolean("consent",false), "detailed" to p.getBoolean("detailed",false)))
+                }
+                "saveSettings" -> {
+                    val p=getSharedPreferences("consumer", MODE_PRIVATE).edit()
+                    for(k in listOf("accepted","consent","detailed")) p.putBoolean(k,call.argument<Boolean>(k) ?: false)
+                    p.apply(); result.success(null)
+                }
                 "moveToBackground" -> {
                     moveTaskToBack(true)
                     result.success(null)
                 }
-                "trainingPermission" -> result.success(TrainingAccessibilityService.connected)
-                "requestTrainingPermission" -> {
-                    startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    result.success(null)
+                "showCompanion" -> {
+                    if (!android.provider.Settings.canDrawOverlays(this)) {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                        result.success(false)
+                    } else { companion?.show(); result.success(true) }
                 }
-                "trainingRoot" -> result.success(java.io.File(filesDir, "training_v3").absolutePath)
-                "trainingStatus" -> result.success(TrainingRecorder.status())
-                "trainingPause" -> {
-                    TrainingRecorder.setPaused(call.argument<Boolean>("paused") ?: true)
-                    result.success(null)
-                }
-                "trainingStart" -> {
-                    val name = call.argument<String>("app").orEmpty().trim()
-                    val aliases = mapOf("douyin" to "com.ss.android.ugc.aweme", "抖音" to "com.ss.android.ugc.aweme",
-                        "微信" to "com.tencent.mm", "wechat" to "com.tencent.mm", "淘宝" to "com.taobao.taobao",
-                        "京东" to "com.jingdong.app.mall", "拼多多" to "com.xunmeng.pinduoduo")
-                    val target = aliases[name.lowercase()] ?: name
-                    val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                    val matches = packageManager.queryIntentActivities(launch, 0).filter {
-                        it.activityInfo.packageName == target || it.loadLabel(packageManager).toString() == name
-                    }.distinctBy { it.activityInfo.packageName }
-                    if (!TrainingAccessibilityService.connected) result.error("permission", "请开启小路无障碍服务", null)
-                    else if (matches.size != 1) result.error("app", "未找到唯一应用，请填写手机上的完整应用名或包名", null)
-                    else {
-                        val pkg = matches.first().activityInfo.packageName
-                        val info = packageManager.getPackageInfo(pkg, 0)
-                        val metadata = mapOf("app" to name, "package_name" to pkg,
-                            "app_label" to matches.first().loadLabel(packageManager).toString(),
-                            "target_version" to info.versionName,
-                            "target_version_code" to if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong(),
-                            "mode" to call.argument<String>("mode"), "task" to call.argument<String>("task"))
-                        TrainingRecorder.start(this, metadata) { state -> mainHandler.post { result.success(state) } }
-                    }
-                }
-                "trainingStop" -> TrainingRecorder.stop { state -> mainHandler.post { result.success(state) } }
-                "trainingAnnotation" -> {
-                    val payload = mapOf("action" to call.argument<String>("action"), "target" to call.argument<String>("target"),
-                        "target_type" to call.argument<String>("targetType"), "note" to call.argument<String>("note"))
-                    TrainingRecorder.annotation(payload) { state -> mainHandler.post { result.success(state) } }
+                "hideCompanion" -> { companion?.hide(); result.success(null) }
+                "updateCompanion" -> { companion?.update(call.argument<String>("text").orEmpty()); result.success(null) }
+                "recognizeSpeech" -> {
+                    if (speechResult != null) result.error("busy", "正在识别语音", null)
+                    else try {
+                        speechResult = result
+                        startActivityForResult(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
+                        }, 2002)
+                    } catch (_: Exception) { speechResult=null; result.error("unavailable", "手机没有可用的语音识别服务，请先使用文字输入", null) }
                 }
                 "requestScreenCapture" -> {
-                    pendingResult = result
-                    requestScreenCapture()
+                    if (pendingResult != null) result.error("busy", "正在等待屏幕共享授权", null)
+                    else {
+                        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                        pendingResult = result
+                        mainHandler.postDelayed({ requestScreenCapture() }, 250)
+                    }
                 }
                 "stopScreenCapture" -> {
                     stopScreenCapture()
@@ -93,6 +105,7 @@ class MainActivity : FlutterActivity() {
                     result.success(speakNative(text, speechRate, pitch))
                 }
                 "stopNativeTts" -> {
+                    pendingTtsTexts.clear()
                     nativeTts?.stop()
                     result.success(null)
                 }
@@ -101,13 +114,6 @@ class MainActivity : FlutterActivity() {
         }
 
         // 截屏帧 EventChannel
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "com.intermap/accessibility_event")
-            .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-                    TrainingAccessibilityService.onEvent = { event -> mainHandler.post { events.success(event) } }
-                }
-                override fun onCancel(arguments: Any?) { TrainingAccessibilityService.onEvent = null }
-            })
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CAPTURE_EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -120,6 +126,7 @@ class MainActivity : FlutterActivity() {
                             } catch (_: Exception) {}
                         }
                     }
+                    ScreenCaptureService.latestFrame?.let { events.success(it) }
                 }
                 override fun onCancel(arguments: Any?) {
                     captureEventSink = null
@@ -141,6 +148,11 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Use registerForActivityResult")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 2002) {
+            speechResult?.success(if (resultCode == Activity.RESULT_OK) data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() else null)
+            speechResult=null
+            return
+        }
         if (requestCode == REQUEST_CODE_SCREEN_CAPTURE) {
             if (resultCode == Activity.RESULT_OK && data != null) {
                 // 启动截屏 Service
@@ -183,6 +195,7 @@ class MainActivity : FlutterActivity() {
                 } else {
                     nativeTtsReady = false
                     pendingTtsTexts.clear()
+                    appBridge?.invokeMethod("speechUnavailable", null)
                 }
             }
             return true
@@ -246,7 +259,16 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    override fun onResume() {
+        super.onResume()
+        appBridge?.invokeMethod("hostVisible", null)
+    }
+
     override fun onDestroy() {
+        companion?.hide()
+        ScreenCaptureService.onStopped = null
+        speechResult?.success(null)
+        speechResult = null
         nativeTts?.stop()
         nativeTts?.shutdown()
         nativeTts = null

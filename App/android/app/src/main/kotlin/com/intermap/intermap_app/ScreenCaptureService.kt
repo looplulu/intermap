@@ -35,6 +35,9 @@ class ScreenCaptureService : Service() {
 
         /** 截屏回调，通过静态变量让 MainActivity 传递给 EventChannel */
         var onFrameCaptured: ((String) -> Unit)? = null
+        var onStopped: (() -> Unit)? = null
+        var latestFrame: String? = null
+            private set
 
         private const val MIN_FRAME_INTERVAL_MS = 300L
 
@@ -48,6 +51,7 @@ class ScreenCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private var handler: Handler? = null
     private var lastFrameAtMs = 0L
+    private var pendingFrame: Runnable? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -130,7 +134,7 @@ class ScreenCaptureService : Service() {
 
         try { setupMediaProjection(resultCode, data) }
         catch (e: Exception) {
-            TrainingRecorder.captureStopped()
+            onStopped?.invoke()
             return stopAndReturn()
         }
         return START_NOT_STICKY
@@ -144,6 +148,7 @@ class ScreenCaptureService : Service() {
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
                 cleanup()
+                stopSelf()
             }
         }, handler)
 
@@ -169,33 +174,30 @@ class ScreenCaptureService : Service() {
 
         // 监听图像帧
         imageReader!!.setOnImageAvailableListener({ reader ->
-            val image: Image? = reader.acquireLatestImage()
+            pendingFrame?.let { handler?.removeCallbacks(it) }
+            val delay = (MIN_FRAME_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastFrameAtMs)).coerceAtLeast(0L)
+            pendingFrame = Runnable {
+            if (imageReader !== reader) return@Runnable
+            val image: Image? = try { reader.acquireLatestImage() } catch (_: Exception) { null }
             if (image != null) {
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastFrameAtMs < MIN_FRAME_INTERVAL_MS) {
-                    image.close()
-                    return@setOnImageAvailableListener
-                }
-                lastFrameAtMs = now
+                lastFrameAtMs = SystemClock.elapsedRealtime()
 
                 var bitmap: Bitmap? = null
                 try {
                     bitmap = imageToBitmap(image, width, height)
-                    if (TrainingRecorder.active) {
-                        @Suppress("DEPRECATION")
-                        val rotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-                        TrainingRecorder.frame(bitmap, SystemClock.uptimeMillis(), rotation)
-                    } else {
-                        val base64 = bitmapToBase64(bitmap, 65)
-                        onFrameCaptured?.invoke(base64)
-                    }
+                    CompanionOverlay.mask(bitmap)
+                    val base64 = bitmapToBase64(bitmap, 65)
+                    latestFrame = base64
+                    onFrameCaptured?.invoke(base64)
                 } catch (e: Exception) {
-                    TrainingRecorder.record("capture_gap", mapOf("reason" to "frame_error", "error" to e.javaClass.simpleName))
+                    onStopped?.invoke()
                 } finally {
                     bitmap?.recycle()
                     image.close()
                 }
             }
+            }
+            handler?.postDelayed(pendingFrame!!, delay)
         }, handler)
 
         isRunning = true
@@ -240,16 +242,21 @@ class ScreenCaptureService : Service() {
     }
 
     private fun cleanup() {
-        TrainingRecorder.captureStopped()
+        val wasRunning = isRunning
         isRunning = false
         lastFrameAtMs = 0L
+        latestFrame = null
+        pendingFrame?.let { handler?.removeCallbacks(it) }
+        pendingFrame = null
         abandonAudioFocus()
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
         imageReader = null
-        mediaProjection?.stop()
+        val projection = mediaProjection
         mediaProjection = null
+        projection?.stop()
+        if (wasRunning) onStopped?.invoke()
     }
 
     override fun onDestroy() {

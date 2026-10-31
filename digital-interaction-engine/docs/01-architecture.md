@@ -1,5 +1,9 @@
 # 架构设计 V1.0
 
+> 历史 Python/地图优先架构。Android 1.1.00 实际为 MediaProjection → ConsumerSession →
+> consumer API → GUI推理 → 一步指导；授权反馈另行形成待审核候选。
+> 路由、状态机与当前限制见 [1.1试用说明](14-consumer-pilot-1.1.md)，不要将下文全量架构视为已集成。
+
 ## 核心原则
 
 **先写 Session，不先写数据库。**

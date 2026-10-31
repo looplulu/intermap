@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>安装包 · 流程证据图册</title>
+<style>
+:root{--ink:#202821;--muted:#69736a;--line:#dce2dc;--paper:#fff;--wash:#f5f7f4;--green:#287543;--green-wash:#edf6ef;--amber:#956522;--amber-wash:#fcf5e7;--blue:#366b87}
+[hidden]{display:none!important}
+.diagram-scroll{max-height:none!important;min-height:180px!important}
+*{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--paper);font-family:"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.55;letter-spacing:0}button,input,select{font:inherit;color:inherit}button,a,select{cursor:pointer}button{border:1px solid var(--line);background:var(--paper);border-radius:4px;padding:7px 12px}button:hover{background:var(--wash)}button:disabled{cursor:default;opacity:.45}a{color:var(--green)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}header{padding:20px 28px 16px;border-bottom:1px solid var(--line);display:flex;gap:24px;justify-content:space-between;align-items:center}h1{font-size:22px;margin:0;font-weight:600}h2{font-size:18px;margin:0 0 10px;font-weight:600}h3{font-size:14px;margin:0 0 8px}.eyebrow{font-size:12px;color:var(--green);margin-bottom:3px}.subtitle{color:var(--muted);margin:4px 0 0}.tag{color:var(--amber);background:var(--amber-wash);padding:5px 9px;border-radius:4px;white-space:nowrap}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-bottom:1px solid var(--line);padding:16px 28px;gap:24px}.stat{display:flex;gap:12px;align-items:baseline}.stat strong{font-size:25px;font-weight:500;font-variant-numeric:tabular-nums}.stat span{color:var(--muted);font-size:12px}.workspace{display:grid;grid-template-columns:282px minmax(0,1fr);min-height:700px}.sidebar{background:var(--wash);border-right:1px solid var(--line);padding:20px 16px;min-width:0}.field{display:block;font-size:12px;color:var(--muted);margin-bottom:14px}.field input,.field select{display:block;width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--paper)}.list-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin:18px 2px 8px}.item-list{max-height:610px;overflow:auto;display:flex;flex-direction:column;gap:2px}.item{border:0;border-left:3px solid transparent;border-radius:0;background:transparent;text-align:left;padding:10px 10px;overflow-wrap:anywhere;width:100%;flex:none}.item[aria-current=true]{border-left-color:var(--green);background:var(--paper)}.item-name{display:block;font-size:13px;line-height:1.6}.item-sub{display:block;color:var(--muted);font-size:11px;margin-top:3px}.content{min-width:0;padding:22px 26px 30px}.notice{padding:11px 14px;background:var(--amber-wash);color:#70501e;font-size:13px;border-left:3px solid #c49745;margin-bottom:20px}.view-head{display:flex;justify-content:space-between;align-items:start;gap:20px}.source{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--muted);overflow-wrap:anywhere;margin:5px 0 14px}.legend{display:flex;flex-wrap:wrap;gap:20px;font-size:12px;color:var(--muted);margin:10px 0}.legend span{display:flex;align-items:center;gap:6px}.swatch{width:17px;height:8px;background:var(--green-wash);border:1px solid var(--green)}.swatch.runtime{background:var(--amber-wash);border:1px dashed var(--amber)}.swatch.declared{background:var(--wash);border:1px solid #8e998f}.diagram-tools{display:flex;gap:5px}.diagram-scroll{overflow:auto;min-height:350px;max-height:660px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:radial-gradient(#e7ebe7 .7px,transparent .7px);background-size:18px 18px}.diagram-scroll svg{display:block;font-family:"PingFang SC","Microsoft YaHei",sans-serif}.diagram-scroll svg text{fill:var(--ink);font-size:13px;letter-spacing:0}.node rect{fill:var(--paper);stroke:#9da99e;stroke-width:1;rx:4}.node.confirmed rect{fill:var(--green-wash);stroke:var(--green)}.node.runtime rect{fill:var(--amber-wash);stroke:var(--amber);stroke-dasharray:5 3}.node.declared rect{fill:var(--wash);stroke:#9da99e}.node .node-type{font-size:10px;fill:var(--muted)}.diagram-edge{fill:none;stroke:#788c7c;stroke-width:1.3}.diagram-edge.runtime{stroke:var(--amber);stroke-dasharray:5 4}.evidence{padding-top:20px}.evidence-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.evidence-list{display:grid;gap:0}.evidence-row{border-top:1px solid var(--line);padding:12px 0;min-width:0}.evidence-row summary{cursor:pointer;display:flex;gap:12px;align-items:baseline;overflow-wrap:anywhere}.evidence-row summary .number{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:25px}.evidence-row summary .status{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap}.evidence-row pre{font-family:ui-monospace,SFMono-Regular,monospace;background:var(--wash);padding:12px;overflow:auto;max-height:400px;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}.evidence-row p{font-size:12px;color:var(--muted);margin:8px 0}.empty{padding:40px 0;color:var(--muted)}.coverage table{width:100%;border-collapse:collapse;margin:16px 0 25px}.coverage th,.coverage td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;font-size:13px}.coverage th{font-weight:500;color:var(--muted)}.coverage ul{padding-left:20px;color:var(--muted);font-size:13px}.coverage code{overflow-wrap:anywhere}.footer{font-size:11px;color:var(--muted);padding:14px 28px;border-top:1px solid var(--line)}.small{font-size:12px;color:var(--muted)}.page-controls{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px}.page-controls button{padding:4px 9px}.module-rows td:nth-child(n+2){font-variant-numeric:tabular-nums}.error{color:#aa3030}
+@media(max-width:1000px){header{padding:18px}.summary{padding:14px 18px;gap:12px}.workspace{grid-template-columns:235px minmax(0,1fr)}.content{padding:18px}.stat{display:block}.stat strong{display:block}.view-head{flex-wrap:wrap}}
+@media(max-width:700px){header{align-items:start;flex-wrap:wrap}.workspace{display:block}.sidebar{border-right:0;border-bottom:1px solid var(--line)}.item-list{max-height:200px}.summary{grid-template-columns:repeat(2,1fr)}.field{margin-bottom:10px}.content{padding:16px}.diagram-scroll{max-height:550px}.notice{font-size:12px}}
+</style>
+</head>
+<body>
+<header><div><div class="eyebrow">INTERMAP / 静态分析</div><h1 id="report-title">安装包 · 流程证据图册</h1><p class="subtitle" id="package"></p></div><div class="tag">未真机验证 · 不进入导航地图</div></header>
+<section class="summary" id="summary" aria-label="提取统计"></section>
+<main class="workspace">
+<aside class="sidebar">
+<label class="field">证据层次<select id="kind"><option value="audit">订单与售后核对图</option><option value="template">交互组件</option><option value="native">代码跳转</option><option value="registry">路由映射表</option><option value="activity">页面声明</option><option value="coverage">扫描范围与缺口</option></select></label>
+<label class="field" id="module-field">功能分组<select id="module"></select></label>
+<label class="field" id="search-field">查找<input id="search" type="search" placeholder="订单、设置、路由或类名"></label>
+<div class="list-meta"><span id="list-name">证据目录</span><span id="list-count"></span></div>
+<div class="item-list" id="list" aria-label="证据项目"></div>
+<div class="page-controls" id="pages"><button id="prev" aria-label="上一页">上一页</button><span id="page"></span><button id="next" aria-label="下一页">下一页</button></div>
+</aside>
+<section class="content" id="content" aria-live="polite"></section>
+</main>
+<footer class="footer" id="footer"></footer>
+<script>/*__DAGRE__*/</script>
+<script id="flow-data" type="application/json">/*__EVIDENCE__*/</script>
+<script>
+(() => {
+'use strict';
+const DATA=JSON.parse(document.getElementById('flow-data').textContent);
+const $=id=>document.getElementById(id);
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const labels={activity_launch:'明确发起页面跳转',route_launch:'明确调用路由打开',route_construction:'仅构造路由，未追到打开',route_declaration:'路由与处理器绑定',static_binding:'固定事件绑定',runtime_value:'运行时决定',declared_only:'仅声明存在'};
+const moduleRules=[['orders',/order|refund|aftersale|reimburse|订单|退款|售后/i],['checkout',/ecom|commerce|shopping|cart|sku|pdp|pay|wallet|shop|商品|购物|钱包/i],['account',/account|login|passport|security|verify|登录|账号/i],['settings',/setting|privacy|permission|help|feedback|设置|隐私|帮助/i],['search',/search|discover|搜索/i],['profile',/profile|favorite|collection|follow|friend|fans|个人|收藏|关注/i],['messages',/message|chat|conversation|\/im\/|share|contact|消息|聊天/i],['create',/camera|record|publish|editor|draft|拍摄|发布/i],['live',/live|直播/i],['local',/poi|life|delivery|takeout|location|团购|外卖/i],['video',/video|feed|play|comment|detail|aweme|视频|评论/i]];
+const mod=value=>(moduleRules.find(x=>x[1].test(value))||['other'])[0];
+const classShort=name=>name.split('.').slice(-1)[0];
+const routeNames={'//search':'搜索','//setting/common':'通用设置','//privacy/setting':'隐私设置','//large/font/setting':'字体大小设置','//about_activity':'关于抖音','//aweme/detail':'视频详情','//friends':'朋友','//user/profile':'个人主页','//login':'登录','aweme://profile_edit':'资料编辑','//setting/account_safety':'账号与安全设置','aweme://livewallpaper':'动态壁纸','aweme://setting/accessibility':'无障碍设置','aweme://setting/powermode':'省电设置','aweme://setting/datasaver':'流量节省设置','aweme://setting/system_permission':'系统权限设置','//business_account_protocol':'企业账号协议','//setting/player_manager':'播放设置','aweme://video/draft':'草稿','//notification':'通知','//chat/message':'聊天消息'};
+const routeTitle=(route,target)=>routeNames[route.split('?')[0]]||((target?.resolved_label)||route);
+const classNames={'SettingNewVersionActivity':'设置页（代码分支）','DouYinSettingNewVersionActivity':'设置页扩展（代码分支）','DiskManagerActivity':'存储空间页（代码分支）','PrivacySettingActivity':'隐私设置页（代码分支）','ECShopSearchActivity':'店铺搜索（代码分支）','PrivacyActivity':'隐私设置处理器（译注）','SettingAccountAndSafetyActivity':'账号与安全处理器（译注）','SettingCommonProtocolActivity':'通用设置协议处理器（译注）','ProfileEditActivity':'个人资料编辑处理器（译注）','LocalLiveWallPaperActivity':'动态壁纸处理器（译注）'};
+const classLabel=name=>classNames[classShort(name)]||classShort(name);
+if(DATA.package.name!=='com.ss.android.ugc.aweme'){for(const key of Object.keys(routeNames))delete routeNames[key];for(const key of Object.keys(classNames))delete classNames[key]}
+const routeLabel=route=>routeNames[route.split('?')[0]]?routeNames[route.split('?')[0]]+'（路由译注）\n'+route:route;
+const nativeGroups=new Map();
+for(const edge of DATA.routes.filter(x=>x.kind!=='route_declaration')){const key=edge.source_class+'\0'+edge.method;const sourceModule=/^(X\.|Y\.|kotlin\.)/.test(edge.source_class)?mod(edge.target):mod(edge.source_class);if(!nativeGroups.has(key))nativeGroups.set(key,{id:edge.id,title:classNames[classShort(edge.source_class)]||classShort(edge.source_class),source:edge.source_class+' → '+edge.method,module:sourceModule,kind:'native',routes:[]});nativeGroups.get(key).routes.push(edge)}
+const registry=DATA.routes.filter(x=>x.kind==='route_declaration').map(x=>({id:x.id,title:routeTitle(x.route),source:x.route+' → '+x.target,module:mod(x.route+' '+x.target),kind:'registry',routes:[x]}));
+const activities=DATA.activities.map(x=>({id:x.id,title:classShort(x.name),source:x.name,module:mod(x.name),kind:'activity',activity:x}));
+const orderPaths=['to_all_tab','product_line','per_order_refund','order_list_header_search','button_line','order_filter_card'];
+const audits=orderPaths.map(name=>DATA.graphs.find(g=>g.source==='assets/offline/ecommerce_order_list_component/'+name+'/main.json')).filter(Boolean).map(g=>({...g,kind:'audit'}));
+const allKinds={audit:audits,template:DATA.graphs.map(g=>({...g,kind:'template'})),native:[...nativeGroups.values()],registry,activity:activities,coverage:[]};
+let kind=audits.length?'audit':DATA.graphs.length?'template':nativeGroups.size?'native':'activity',moduleId='all',search='',selected=null,page=0,zoom=1,visible=[],currentGraph=null;
+const appKey=DATA.app?.key||DATA.package.name,appName=DATA.app?.name||DATA.package.name;
+document.title=appName+'安装包 · 流程证据图册';$('report-title').textContent=document.title;
+if(!audits.length)$('kind').querySelector('option[value="audit"]').remove();
+$('kind').value=kind;
+$('package').textContent=DATA.package.name+' · Android '+DATA.package.version_name+' · 分析日期 '+DATA.generated_at.slice(0,10);
+$('footer').textContent='SHA-256 '+DATA.sha256+' · 分组仅用于整理证据，不代表已验证的应用功能树';
+const stats=[[DATA.scan.graphs,'带交互绑定的组件'],[DATA.scan.bindings,'事件绑定，非任务路线'],[registry.length,'原生路由映射'],[DATA.activities.length,'Activity / 别名声明']];
+$('summary').innerHTML=stats.map(([n,t])=>'<div class="stat"><strong>'+n.toLocaleString()+'</strong><span>'+t+'</span></div>').join('');
+$('module').innerHTML='<option value="all">全部分组</option>'+DATA.modules.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.label)+'</option>').join('');
+$('kind').addEventListener('change',e=>{kind=e.target.value;selected=null;page=0;refresh()});
+$('module').addEventListener('change',e=>{moduleId=e.target.value;selected=null;page=0;refresh()});
+$('search').addEventListener('input',e=>{search=e.target.value.trim().toLowerCase();selected=null;page=0;refresh()});
+$('prev').addEventListener('click',()=>{page--;renderList()});$('next').addEventListener('click',()=>{page++;renderList()});
+function refresh(){
+  $('module-field').hidden=kind==='coverage'||kind==='audit';$('search-field').hidden=kind==='coverage';$('pages').hidden=kind==='coverage';
+  visible=allKinds[kind].filter(x=>(moduleId==='all'||kind==='audit'||x.module===moduleId)&&(!search||JSON.stringify(x).toLowerCase().includes(search)));
+  if(kind==='coverage'){renderCoverage();$('list').innerHTML='';$('list-count').textContent='';return}
+  selected=visible.find(x=>x.id===selected?.id)||visible[0]||null;renderList();renderSelected();
+}
+function renderList(){
+  const max=Math.max(1,Math.ceil(visible.length/45));page=Math.max(0,Math.min(page,max-1));
+  $('list-count').textContent=visible.length+' 项';$('page').textContent=(page+1)+' / '+max;$('prev').disabled=page===0;$('next').disabled=page===max-1;
+  $('list').innerHTML=visible.slice(page*45,page*45+45).map(x=>'<button class="item" data-id="'+esc(x.id)+'" aria-current="'+(selected?.id===x.id)+'"><span class="item-name">'+esc(x.title)+'</span><span class="item-sub">'+esc(x.kind==='audit'?'订单列表资源 · 独立组件':x.kind==='template'?(x.bindings.length+' 个绑定 · '+x.source.split('/').slice(-3,-1).join('/')):x.kind==='native'?(x.routes.length+' 处代码证据'):x.source)+'</span></button>').join('')||'<p class="small">没有匹配的证据。</p>';
+  for(const button of $('list').querySelectorAll('button'))button.onclick=()=>{selected=visible.find(x=>x.id===button.dataset.id);renderList();renderSelected()};
+}
+const graphBase=()=>({nodes:[],edges:[]});
+function addNode(g,id,label,type,status='declared'){g.nodes.push({id,label,type,status});return id}
+function addEdge(g,from,to,status='confirmed'){g.edges.push({from,to,status})}
+function visibleLabel(binding){const fixed=binding.texts.filter(t=>!t.dynamic&&String(t.value).trim()).map(t=>String(t.value));return [...new Set(fixed)].slice(0,2).join(' / ')||'文字、图标来自运行时数据'}
+function graphFor(item){
+  const g=graphBase();
+  if(item.kind==='template'||item.kind==='audit'){
+    addNode(g,'source',item.title,'包内组件（名称译注）');
+    item.bindings.forEach((b,i)=>{const fixed=b.status==='static_binding';addNode(g,'action'+i,visibleLabel(b),'交互元素 '+(i+1));addNode(g,'event'+i,fixed?b.event:'动态事件表达式',fixed?'固定事件名':'运行时事件',fixed?'confirmed':'runtime');addNode(g,'target'+i,'目标页面未解析','等待处理器 / 运行时数据','runtime');addEdge(g,'source','action'+i,'declared');addEdge(g,'action'+i,'event'+i,fixed?'confirmed':'runtime');addEdge(g,'event'+i,'target'+i,'runtime')});
+  }else if(item.kind==='native'||item.kind==='registry'){
+    addNode(g,'source',item.kind==='registry'?'路由注册表':classLabel(item.routes[0].source_class),item.kind==='registry'?'静态声明':'代码处理器（非界面标题）');
+    item.routes.forEach((r,i)=>{if(r.kind==='route_declaration'){addNode(g,'route'+i,routeLabel(r.route),'声明的路由');addNode(g,'target'+i,classLabel(r.target),'绑定的页面 / 处理器');addEdge(g,'source','route'+i,'declared');addEdge(g,'route'+i,'target'+i,'confirmed');return}const opened=r.kind==='route_launch'||r.kind==='activity_launch';addNode(g,'route'+i,r.kind==='activity_launch'?classLabel(r.target):routeLabel(r.target),labels[r.kind],opened?'confirmed':'runtime');addEdge(g,'source','route'+i,opened?'confirmed':'runtime');if(r.resolved_targets?.length){r.resolved_targets.forEach((t,j)=>{addNode(g,'target'+i+'_'+j,classLabel(t.name),'路由表对应的处理器');addEdge(g,'route'+i,'target'+i+'_'+j,'confirmed')})}else if(r.kind!=='activity_launch'){addNode(g,'target'+i,'目标处理器未静态匹配','不根据路由名字补全','runtime');addEdge(g,'route'+i,'target'+i,'runtime')}});
+  }else if(item.kind==='activity'){
+    const a=item.activity;addNode(g,'source',a.resolved_label||classShort(a.name),'页面声明（不表示已到达）');
+    a.intent_filters.forEach((f,i)=>{addNode(g,'filter'+i,[...f.actions,...f.data.map(x=>(x.scheme||'')+'://'+(x.host||'')+(x.path||x.pathPrefix||''))].join('\n')||'Intent filter','外部唤起条件');addEdge(g,'filter'+i,'source','declared')});
+  }
+  return g;
+}
+function renderSelected(){
+  if(!selected){$('content').innerHTML='<div class="empty">当前分组没有匹配结果。</div>';return}
+  const item=selected;
+  const notice=item.kind==='audit'?'这是订单模块的独立组件证据，不是已还原的“我 → 我的订单 → 退款”完整路线。组件之间没有证据的地方不连线。':item.kind==='template'?'实线只确认元素绑定了哪个事件。虚线表示事件取值或后续目标尚未解析；不代表已确定用户应点击的页面。':item.kind==='registry'?'路由表能证明路由与处理器的绑定，不能证明用户从哪个按钮进入，也不能证明登录、订单状态等前置条件。':item.kind==='activity'?'这是安装包中的页面声明。Activity 数量不是用户可见页面数量，更不是完整任务路线数量。':'仅展示代码中直接追到的跳转。代码分支、登录拦截、账号条件和服务器配置仍未经过真机验证。';
+  $('content').innerHTML='<div class="notice">'+esc(notice)+'</div><div class="view-head"><div><h2>'+esc(item.title)+'</h2><div class="source">'+esc(item.source)+'</div></div><div class="diagram-tools"><button id="zoom-out" aria-label="缩小图">−</button><button id="zoom-in" aria-label="放大图">+</button><button id="export">导出图</button></div></div><div class="legend"><span><i class="swatch"></i>明确绑定 / 调用</span><span><i class="swatch runtime"></i>动态值 / 缺少连接</span><span><i class="swatch declared"></i>仅存在声明 / 组件归属</span></div><div class="diagram-scroll" id="diagram"></div><section class="evidence"><div class="evidence-head"><h3>逐条证据</h3><span class="small">原始路径与绑定值</span></div><div class="evidence-list" id="evidence"></div></section>';
+  zoom=1;currentGraph=graphFor(item);drawGraph();renderEvidence(item);
+  $('zoom-in').onclick=()=>{zoom=Math.min(2,zoom+.2);drawGraph()};$('zoom-out').onclick=()=>{zoom=Math.max(.6,zoom-.2);drawGraph()};
+  $('export').onclick=()=>{const svg=$('diagram').querySelector('svg').cloneNode(true);const style=document.createElementNS('http://www.w3.org/2000/svg','style');style.textContent='.node rect{fill:#fff;stroke:#9da99e;rx:4}.node.confirmed rect{fill:#edf6ef;stroke:#287543}.node.runtime rect{fill:#fcf5e7;stroke:#956522;stroke-dasharray:5 3}.node.declared rect{fill:#f5f7f4;stroke:#9da99e}text{font-family:PingFang SC,Microsoft YaHei,sans-serif;font-size:13px;fill:#202821}.node-type{font-size:10px;fill:#69736a}.diagram-edge{fill:none;stroke:#788c7c;stroke-width:1.3}.diagram-edge.runtime{stroke:#956522;stroke-dasharray:5 4}';svg.prepend(style);download(new XMLSerializer().serializeToString(svg),appKey+'-'+item.id+'.svg','image/svg+xml')};
+}
+function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function wrap(text,width){const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');ctx.font='13px "PingFang SC",sans-serif';const lines=[];for(const paragraph of String(text).split('\n')){let line='';for(const c of paragraph){if(ctx.measureText(line+c).width>width&&line){lines.push(line);line=''}line+=c}lines.push(line)}return lines}
+function drawGraph(){
+  const graph=new dagre.graphlib.Graph().setGraph({rankdir:'LR',ranksep:42,nodesep:20,marginx:24,marginy:25}).setDefaultEdgeLabel(()=>({}));
+  const sizes=new Map();for(const n of currentGraph.nodes){const lines=wrap(n.label,174);const box={width:202,height:Math.max(72,lines.length*19+38),lines};sizes.set(n.id,box);graph.setNode(n.id,box)}for(const e of currentGraph.edges)graph.setEdge(e.from,e.to);dagre.layout(graph);
+  const size=graph.graph();const arrow='arrow-'+selected.id;let svg='<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="'+esc(selected.title)+'静态证据流程图" width="'+Math.ceil(size.width*zoom)+'" height="'+Math.ceil(size.height*zoom)+'" viewBox="0 0 '+size.width+' '+size.height+'"><title>'+esc(selected.title)+'</title><defs><marker id="'+arrow+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#788c7c"/></marker></defs>';
+  for(const e of currentGraph.edges){const points=graph.edge(e.from,e.to).points;svg+='<path class="diagram-edge '+e.status+'" marker-end="url(#'+arrow+')" d="'+points.map((p,i)=>(i?'L':'M')+p.x+','+p.y).join(' ')+'"/>'}
+  for(const n of currentGraph.nodes){const p=graph.node(n.id),s=sizes.get(n.id),x=p.x-s.width/2,y=p.y-s.height/2;svg+='<g class="node '+n.status+'" transform="translate('+x+','+y+')"><rect width="'+s.width+'" height="'+s.height+'"/><text class="node-type" x="14" y="20">'+esc(n.type)+'</text><text x="14" y="43">'+s.lines.map((l,i)=>'<tspan x="14" dy="'+(i?19:0)+'">'+esc(l)+'</tspan>').join('')+'</text></g>'}svg+='</svg>';$('diagram').innerHTML=svg;
+}
+function evidenceRow(index,title,status,path,data){return '<details class="evidence-row"><summary><span class="number">'+String(index+1).padStart(2,'0')+'</span><span>'+esc(title)+'</span><span class="status">'+esc(status)+'</span></summary><p>'+esc(path)+'</p><pre>'+esc(JSON.stringify(data,null,2))+'</pre></details>'}
+function renderEvidence(item){
+  let html='';if(item.bindings){html=item.bindings.map((b,i)=>evidenceRow(i,b.event,labels[b.status],item.source+' '+b.path,b)).join('')}else if(item.routes){html=item.routes.map((r,i)=>evidenceRow(i,r.route||r.target,labels[r.kind],r.dex+' · '+r.source_class+' · '+r.method+' · byte offset '+r.offset,r)).join('')}else html=evidenceRow(0,item.activity.name,'AndroidManifest.xml 声明','AndroidManifest.xml',item.activity);$('evidence').innerHTML=html;
+}
+function renderCoverage(){
+  const s=DATA.scan,rows=[['APK 文件条目',s.apk_entries,'逐项清点'],['DEX 代码文件',s.dex_scanned+' / '+s.dex_total,'扫描方法表；对导航候选解码，不是全程序控制流求解'],['代码类',s.classes.toLocaleString(),'包含第三方库，不等于功能数量'],['编码方法',s.methods.toLocaleString(),s.decoded_methods+' 个导航 / 事件候选方法完整解码'],['资源 XML',s.xml_parsed+' / '+s.xml_total,'显式 android:onClick 绑定；运行时监听未由布局推断'],['assets JSON',s.asset_json_parsed+' / '+s.asset_json_total,'解析对象与数组中的显式交互字段'],['固定事件绑定',s.static_bindings,'确认事件名，不保证已知目标页面'],['动态事件绑定',s.dynamic_bindings,'保留原表达式，不根据名称猜目标'],['内嵌脚本',s.script_total,'可能为二进制或动态脚本；未完成脚本反编译']];
+  const modules=DATA.modules.map(m=>{const gs=allKinds.template.filter(g=>g.module===m.id);return [m.label,gs.length,gs.reduce((a,g)=>a+g.bindings.length,0),registry.filter(g=>g.module===m.id).length,activities.filter(g=>g.module===m.id).length]});
+  $('content').innerHTML='<div class="coverage"><h2>本次扫描范围</h2><div class="notice">本图册没有声称“还原全部应用业务流程”。它完整保存本次规则提取的证据，未解析部分单独列出。包内文件扫描比例不能换算成 App 功能覆盖率。</div><table><thead><tr><th>对象</th><th>数量</th><th>实际含义</th></tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table><h2>分模块证据量</h2><table class="module-rows"><thead><tr><th>名称关键词分组</th><th>交互组件</th><th>绑定</th><th>路由声明</th><th>页面声明</th></tr></thead><tbody>'+modules.map(r=>'<tr>'+r.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table><h2>未解决的边界</h2><ul>'+DATA.limitations.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul><h2>未解析与排除项</h2><table><thead><tr><th>来源</th><th>原因</th></tr></thead><tbody>'+DATA.unparsed.map(x=>'<tr><td><code>'+esc(x.path)+'</code></td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table><button id="download-data">下载原始证据 JSON</button></div>';
+  $('download-data').onclick=()=>download(JSON.stringify(DATA,null,2),appKey+'-'+DATA.package.version_name+'-flow-evidence.json','application/json');
+}
+refresh();
+})();
+</script>
+</body>
+</html>

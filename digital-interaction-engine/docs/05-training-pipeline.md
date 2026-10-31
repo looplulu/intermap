@@ -1,5 +1,9 @@
 # Training Pipeline
 
+> This is the retained legacy training pipeline. The Android 1.1 pilot writes
+> opt-in consumer feedback separately and does not run this pipeline automatically.
+> See [the current protocol and review flow](14-consumer-pilot-1.1.md).
+
 ## Goal
 
 Use the web demo's iPhone Mirroring capture as the real interaction data source.

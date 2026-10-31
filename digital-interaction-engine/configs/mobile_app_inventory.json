@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "collection_approval": {
+    "date": "2026-10-25",
+    "approved_app_keys": ["wechat", "douyin", "kuaishou", "taobao", "pinduoduo", "jd", "meituan", "meituan_waimai", "taobao_flash", "amap", "baidu_map", "didi", "ctrip", "cainiao"],
+    "deferred_app_keys": ["taobao", "kuaishou", "jd", "meituan", "didi", "ctrip"],
+    "deferral_note": "2026-10-25: user requested keeping the eight completed apps only; do not retry deferred acquisitions without a new request.",
+    "note": "User approved this batch excluding SF Express. Legacy inventory entries outside this list are not collection targets."
+  },
+  "source_policy": {
+    "android": "Only download from a vendor site or an authorized official app store. Verify the downloaded package name, distributor-provided digest, APK signature integrity, and signer certificate before analysis.",
+    "ios": "Use public App Store metadata and real-device observations only. Do not bypass FairPlay or use cracked/decrypted IPA files.",
+    "promotion": "Package-derived evidence is apk_static and must remain pending_review until live-device validation."
+  },
+  "apps": [
+    {
+      "key": "wechat",
+      "name": "微信",
+      "android": {
+        "vendor_download_url": "https://dldir1v6.qq.com/weixin/android/weixin8079android3200_0x28004f30_arm64_1.apk",
+        "vendor_source_page": "https://weixin.qq.com/",
+        "package": "com.tencent.mm",
+        "listing_url": "https://sj.qq.com/appdetail/com.tencent.mm",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.tencent.xin",
+        "app_store_id": 414478124
+      }
+    },
+    {
+      "key": "douyin",
+      "name": "抖音",
+      "android": {
+        "package": "com.ss.android.ugc.aweme",
+        "listing_url": "https://sj.qq.com/appdetail/com.ss.android.ugc.aweme",
+        "vendor_url": "https://www.douyin.com/downloadpage/app",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.ss.iphone.ugc.Aweme",
+        "app_store_id": 1142110895
+      }
+    },
+    {
+      "key": "kuaishou",
+      "name": "快手",
+      "android": {
+        "package": "com.smile.gifmaker",
+        "listing_url": "https://sj.qq.com/appdetail/com.smile.gifmaker",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.jiangjia.gif",
+        "app_store_id": 440948110
+      }
+    },
+    {
+      "key": "xiaohongshu",
+      "name": "小红书",
+      "android": {
+        "package": "com.xingin.xhs",
+        "listing_url": "https://sj.qq.com/appdetail/com.xingin.xhs",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.xingin.discover",
+        "app_store_id": 741292507
+      }
+    },
+    {
+      "key": "taobao",
+      "name": "淘宝",
+      "android": {
+        "package": "com.taobao.taobao",
+        "listing_url": "https://sj.qq.com/appdetail/com.taobao.taobao",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.taobao.taobao4iphone",
+        "app_store_id": 387682726
+      }
+    },
+    {
+      "key": "jd",
+      "name": "京东",
+      "android": {
+        "vendor_source_page": "https://storage.jd.com/swm-stable/app/android.html",
+        "package": "com.jingdong.app.mall",
+        "listing_url": "https://sj.qq.com/appdetail/com.jingdong.app.mall",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.360buy.jdmobile",
+        "app_store_id": 414245413
+      }
+    },
+    {
+      "key": "pinduoduo",
+      "name": "拼多多",
+      "android": {
+        "vendor_source_page": "https://www.pinduoduo.com/home/download/",
+        "vendor_config_url": "https://home-api.pinduoduo.com/homesite/download-app-v2?rs=0",
+        "vendor_download_url": "https://cd.pddpic.com/volantis-open/mobile-CI-tag/2026-10-20/e063dfe52d165173b82a7fd745480d40.apk",
+        "package": "com.xunmeng.pinduoduo",
+        "listing_url": "https://sj.qq.com/appdetail/com.xunmeng.pinduoduo",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.xunmeng.pinduoduo",
+        "app_store_id": 1044283059
+      }
+    },
+    {
+      "key": "meituan",
+      "name": "美团",
+      "android": {
+        "package": "com.sankuai.meituan",
+        "listing_url": "https://sj.qq.com/appdetail/com.sankuai.meituan",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.meituan.imeituan",
+        "app_store_id": 423084029
+      }
+    },
+    {
+      "key": "meituan_waimai",
+      "name": "美团外卖",
+      "android": {
+        "vendor_source_page": "https://waimai.meituan.com/mobile/download/default",
+        "vendor_config_url": "https://waimai.meituan.com/download?channel=1013",
+        "vendor_download_url": "https://v.meituan.net/mobile/app/Android/waimai-800840002__aarch64_1-1013.apk/1013",
+        "package": "com.sankuai.meituan.takeoutnew",
+        "listing_url": "https://sj.qq.com/appdetail/com.sankuai.meituan.takeoutnew",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "com.meituan.itakeaway",
+        "app_store_id": 737310995
+      }
+    },
+    {
+      "key": "taobao_flash",
+      "name": "淘宝闪购",
+      "aliases": ["饿了么"],
+      "android": {
+        "vendor_source_page": "https://h5.ele.me/download/",
+        "vendor_config_url": "https://shadow.elemecdn.com/faas/h5/download/download.0fc8239.js",
+        "vendor_download_url": "https://appdownload.alicdn.com/publish/eleme_android/latest/eleme_android_1601275026119.apk",
+        "package": "me.ele",
+        "listing_url": "https://sj.qq.com/appdetail/me.ele",
+        "source": "tencent_myapp"
+      },
+      "ios": {
+        "bundle_id": "me.ele.ios.eleme",
+        "app_store_id": 507161324
+      }
+    },
+    {
+      "key": "amap", "name": "高德地图",
+      "android": {"package": "com.autonavi.minimap", "listing_url": "https://sj.qq.com/appdetail/com.autonavi.minimap", "source": "tencent_myapp", "vendor_source_page": "https://mobile.amap.com/cn/", "vendor_config_url": "https://mapdownload.autonavi.com/apps/apps/amap-official/amap-official/mobile_and.json", "vendor_download_url": "https://download.autonavi.com/amap/package/C3060/Amap_V17.01.0.2012_android_C3060_(Build261012115338u2QtGbjH-64).apk"}
+    },
+    {
+      "key": "baidu_map", "name": "百度地图",
+      "android": {"package": "com.baidu.BaiduMap", "listing_url": "https://sj.qq.com/appdetail/com.baidu.BaiduMap", "source": "tencent_myapp", "vendor_source_page": "https://map.baidu.com/zt/client/index/", "vendor_download_url": "https://downpack.baidu.com/baidumap_AndroidPhone_1009176a.apk"}
+    },
+    {
+      "key": "didi", "name": "滴滴", "aliases": ["滴滴出行"],
+      "android": {"package": "com.sdu.didi.psnger", "listing_url": "https://sj.qq.com/appdetail/com.sdu.didi.psnger", "source": "tencent_myapp"}
+    },
+    {
+      "key": "ctrip", "name": "携程旅行",
+      "android": {"package": "ctrip.android.view", "listing_url": "https://sj.qq.com/appdetail/ctrip.android.view", "source": "tencent_myapp", "vendor_source_page": "https://app.ctrip.com/"}
+    },
+    {
+      "key": "cainiao", "name": "菜鸟",
+      "android": {"package": "com.cainiao.wireless", "listing_url": "https://sj.qq.com/appdetail/com.cainiao.wireless", "source": "tencent_myapp", "vendor_source_page": "https://www.guoguo-app.com/mobileApp.htm", "vendor_download_url": "https://www.guoguo-app.com/customer/jumper.do?ttid=10004264"}
+    }
+  ]
+}

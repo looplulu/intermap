@@ -42,28 +42,14 @@
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
 
-        <!-- 无障碍服务声明 -->
-        <service
-            android:name="slayer.accessibility.service.flutter_accessibility_service.AccessibilityListener"
-            tools:node="remove" />
-        <service
-            android:name=".TrainingAccessibilityService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
-
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
     <queries>
+        <package android:name="com.ss.android.ugc.aweme" />
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

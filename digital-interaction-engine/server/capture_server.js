@@ -12,6 +12,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { TrainingEvidenceStore } = require('./training_evidence');
+const { ConsumerNavigation } = require('./consumer_navigation');
 
 const PORT = Number(process.env.PORT || 3011);
 const ARK_API_KEY = process.env.ARK_API_KEY || '';
@@ -23,6 +24,7 @@ const PYTHON_BIN = process.env.INTERMAP_PYTHON_BIN || "/opt/miniconda3/envs/ocr/
 const OCR_API_URL = process.env.INTERMAP_OCR_URL || "http://127.0.0.1:18000/api/analyze_base64";
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 const evidenceStore = new TrainingEvidenceStore(DATA_DIR);
+const consumerNavigation = new ConsumerNavigation(DATA_DIR);
 let evidenceWorker = null;
 function processEvidence() {
   if (evidenceWorker) return;
@@ -624,7 +626,8 @@ function findBestFlow(goal, app) {
 }
 
 function verifyTrainPassword(password) {
-  const expected = process.env.TRAIN_PASSWORD || "1623";
+  const expected = process.env.TRAIN_PASSWORD;
+  if (!expected) return false;
   return password === expected;
 }
 
@@ -706,6 +709,34 @@ async function getOcrEvidence(imageData) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const consumerRoute = /^\/(?:api\/)?consumer\/(session|frame|feedback|review)$/.exec(req.url);
+  if (req.method === 'POST' && consumerRoute) {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const data = JSON.parse(await readBody(req));
+      const remote = req.socket.remoteAddress;
+      const ip = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
+        ? (req.headers['x-real-ip'] || remote) : remote;
+      if (consumerRoute[1] === 'review') {
+        if (!consumerNavigation.limit('review:' + ip, 30)) {
+          sendJson(res, 429, {ok: false}); return;
+        }
+        if (!verifyTrainPassword(String(data.password || ''))) {
+          sendJson(res, 403, {ok: false}); return;
+        }
+        sendJson(res, 200, {ok: true, ...consumerNavigation.review(data.session_id)});
+        return;
+      }
+      const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+      const result = await consumerNavigation.dispatch(consumerRoute[1], data, token, ip);
+      sendJson(res, 200, result);
+    } catch (error) {
+      const reason = error.message || 'FAILED';
+      sendJson(res, reason === 'UNAUTHORIZED' ? 401 : reason === 'LIMIT' ? 429 : 400,
+        {ok: false, error: /^(UNAUTHORIZED|LIMIT|INVALID_|MODEL_)/.test(reason) ? reason : 'TEMPORARY_FAILURE'});
+    }
+    return;
+  }
   if (req.method === "OPTIONS") {
     sendJson(res, 204, {});
     return;

@@ -1,5 +1,9 @@
 # Live Training Handoff
 
+> Legacy web/iPhone Mirroring training remains available with its existing password.
+> Android 1.1 no longer exposes manual training. Its consumer feedback uses a separate
+> collection and protocol: [1.1 handoff](14-consumer-pilot-1.1.md).
+
 > Android 1.0.18 supersedes the legacy Android paragraphs below. The primary
 > device is vivo Y300 Pro; native event/frame evidence, authenticated chunked
 > upload and cloud review now use `android_training_v3/`. Read

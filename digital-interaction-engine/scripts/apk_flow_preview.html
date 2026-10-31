@@ -1,0 +1,51 @@
+<div id="douyin-apk-evidence-preview">
+  <h3>抖音 40.3.0 · 连接证据与断点</h3>
+  <label class="form-label">核对片段
+    <select class="form-select" data-choice></select>
+  </label>
+  <div data-figure></div>
+  <div class="text-small" data-source></div>
+</div>
+<style>
+#douyin-apk-evidence-preview{width:100%}
+#douyin-apk-evidence-preview [data-source]{overflow-wrap:anywhere;margin-top:12px;color:var(--muted-foreground)}
+#douyin-apk-evidence-preview svg{display:block;width:100%;overflow:visible}
+#douyin-apk-evidence-preview .node-label{fill:var(--foreground);font-weight:500}
+#douyin-apk-evidence-preview .node-type{fill:var(--muted-foreground)}
+#douyin-apk-evidence-preview rect{fill:color-mix(in srgb,var(--viz-series-1) 7%,var(--background));stroke:var(--border);rx:4}
+#douyin-apk-evidence-preview .pending rect{fill:color-mix(in srgb,var(--viz-series-2) 9%,var(--background));stroke:var(--viz-series-2);stroke-dasharray:5 4}
+#douyin-apk-evidence-preview .edge{stroke:var(--muted-foreground);stroke-width:1.3;fill:none}
+#douyin-apk-evidence-preview .edge.pending{stroke:var(--viz-series-2);stroke-dasharray:5 4}
+</style>
+<script>
+(() => {
+  const root=document.getElementById('douyin-apk-evidence-preview');
+  const items=/*__ITEMS__*/;
+  const select=root.querySelector('[data-choice]');
+  const figure=root.querySelector('[data-figure]');
+  const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  select.innerHTML=items.map((x,i)=>'<option value="'+i+'">'+esc(x.title)+'</option>').join('');
+  function draw(){
+    const item=items[Number(select.value)||0];
+    const width=Math.max(280,Math.round(figure.getBoundingClientRect().width));
+    const nodeWidth=Math.min(540,width-24),x=(width-nodeWidth)/2;
+    const computed=getComputedStyle(root),font=computed.fontSize;
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');ctx.font='500 '+font+' '+computed.fontFamily;
+    const wrap=text=>{const lines=[];let line='';for(const c of text){if(ctx.measureText(line+c).width>nodeWidth-48&&line){lines.push(line);line=''}line+=c}if(line)lines.push(line);return lines};
+    let y=20,svg='',previous=null;
+    item.nodes.forEach((n,i)=>{
+      const lines=wrap(n.label),types=wrap(n.type);
+      const lineHeight=parseFloat(font)*1.5,height=28+(types.length+lines.length)*lineHeight;
+      if(previous!==null)svg+='<path class="edge '+(n.pending?'pending':'')+'" marker-end="url(#douyin-preview-arrow)" d="M '+width/2+' '+previous+' L '+width/2+' '+(y-6)+'"/>';
+      svg+='<g class="'+(n.pending?'pending':'')+'"><rect x="'+x+'" y="'+y+'" width="'+nodeWidth+'" height="'+height+'"/><text class="node-type" x="'+(x+16)+'" y="'+(y+21)+'">'+types.map((l,j)=>'<tspan x="'+(x+16)+'" dy="'+(j?lineHeight:0)+'">'+esc(l)+'</tspan>').join('')+'</text><text class="node-label" x="'+(x+16)+'" y="'+(y+27+types.length*lineHeight)+'">'+lines.map((l,j)=>'<tspan x="'+(x+16)+'" dy="'+(j?lineHeight:0)+'">'+esc(l)+'</tspan>').join('')+'</text></g>';
+      previous=y+height;y+=height+32;
+    });
+    figure.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="'+esc(item.title)+'" viewBox="0 0 '+width+' '+y+'"><title>'+esc(item.title)+'</title><defs><marker id="douyin-preview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted-foreground)"/></marker></defs>'+svg+'</svg>';
+    root.querySelector('[data-source]').textContent=item.source;
+  }
+  select.addEventListener('change',()=>{draw();window.openai?.setWidgetState?.({modelContent:{selectedEvidence:items[Number(select.value)].title},privateContent:{index:Number(select.value)}})?.catch(()=>{})});
+  const saved=window.openai?.widgetState?.privateContent?.index;if(Number.isInteger(saved)&&items[saved])select.value=String(saved);
+  window.addEventListener('openai:set_globals',e=>{const i=e.detail?.globals?.widgetState?.privateContent?.index;if(Number.isInteger(i)&&items[i]){select.value=String(i);draw()}});
+  new ResizeObserver(draw).observe(figure);draw();document.fonts.ready.then(draw);
+})();
+</script>

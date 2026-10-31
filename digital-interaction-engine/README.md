@@ -1,10 +1,15 @@
 # Digital Interaction Engine（数字交互引擎）
 
-> 数字世界的第一张高精交互地图（HD Interaction Map）。
+> 小路：面向中国中老年用户的连续手机操作导航。
 
 ## 一句话描述
 
-以 AI 眼镜为载体，帮助中老年人重新获得数字世界的控制感。通过连续任务导航（Continuous Task Navigation），边导航边建图，让数字交互地图在真实使用中持续成长。
+小路是商业化手机导航产品。用户用文字或语音表达目标，系统持续识别实际页面，一次讲清一步，由用户自己操作，直到任务结束。当前优先 Android 和抖音。
+
+**当前 Android 1.1.00**：GUI + 模型推理连续导航，不以预建完整地图为前提；移除 APK
+无障碍/学习/训练入口，保留旧数据。独立授权后的结构化反馈进入服务器待审核候选，
+不自动训练权重或发布地图。接入、运维和实际限制见 [1.1试用说明](docs/14-consumer-pilot-1.1.md)。
+下列 Python 地图引擎说明主要保留为研究架构，不代表 Android 1.1已集成所有模块。
 
 ## 核心设计哲学
 
@@ -43,7 +48,7 @@ digital-interaction-engine/
 
 ## V1.0 目标
 
-> 验证数字交互地图是否能够在真实导航过程中持续学习、持续成长。
+> 让目标用户可靠地独立完成受支持的手机任务，并验证付费需求与服务成本；通过审核过的真实交互持续改进导航。
 
 ## 文档索引
 
@@ -57,3 +62,8 @@ digital-interaction-engine/
 | [docs/05-training-pipeline.md](docs/05-training-pipeline.md) | iPhone 镜像采集与训练闭环 |
 | [docs/06-click-capture-options.md](docs/06-click-capture-options.md) | 点击坐标采集方案 |
 | [docs/07-training-handoff.md](docs/07-training-handoff.md) | 网页实时训练交接说明 |
+| [docs/08-douyin-apk-static-analysis.md](docs/08-douyin-apk-static-analysis.md) | 抖音 APK 静态分析与 Golden Flow 交叉验证 |
+| [docs/09-mobile-package-static-analysis.md](docs/09-mobile-package-static-analysis.md) | 常用 App 安装包静态分析流水线与边界 |
+| [docs/13-approved-app-static-evidence.md](docs/13-approved-app-static-evidence.md) | 本批8个App的静态图册、存储与暂缓范围 |
+| [docs/10-common-app-package-baseline.md](docs/10-common-app-package-baseline.md) | 十个常用 App 的 Android 静态基线与 iOS 验证矩阵 |
+| [docs/12-douyin-apk-flow-atlas.md](docs/12-douyin-apk-flow-atlas.md) | 抖音 40.3.0 流程证据图册、扫描结果与未解析边界 |

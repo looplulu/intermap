@@ -1,17 +1,27 @@
-# intermap_app
+# 小路 Android 1.1.00
 
-A new Flutter project.
+面向中国中老年用户的连续任务导航试用版。用户自己操作，App 看授权画面并给出下一步语音。
+本版没有无障碍、人工训练入口或自动点击。先验证抖音常见任务。
 
-## Getting Started
+- 入口与系统控制：`lib/main.dart`、`android/app/src/main/kotlin/com/intermap/intermap_app/`
+- 状态机与自动反馈：`lib/services/consumer_session.dart`
+- 后端：`../digital-interaction-engine/server/consumer_navigation.js`
+- 完整接入、数据协议、运维及验收：`../digital-interaction-engine/docs/14-consumer-pilot-1.1.md`
 
-This project is a starting point for a Flutter application.
+```sh
+flutter pub get
+flutter analyze
+flutter test
+JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
+  flutter build apk --release --build-name=1.1.00 --build-number=20
+```
 
-A few resources to get you started if this is your first Flutter project:
+输出 `build/app/outputs/flutter-apk/app-release.apk`，交付名 `小路1.1.00.apk`。
+当前 debug 签名仅用于内部侧载。模型密钥只在服务器；APK 不需训练密码。
+语音输入依赖系统服务，女声音质依赖手机 TTS。未做 vivo 真机验收，不保证亚秒识别。
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+首次使用可单独同意分享结构化反馈，之后自动上传；设置更改从下次任务生效。
+连续画面不落训练文件；已同意任务的页面类别、环境、纠错和结果进入服务器待审核记录。
+断网反馈先存私有队列，24小时内补传。旧训练材料不会被新版删除，也不由新版继续补传。
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+历史 `PLAN.md` 和未由新入口引用的训练服务只用于旧版本研究，不代表本版可用功能。

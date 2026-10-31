@@ -1,5 +1,8 @@
 # InterMap Android App 完整开发计划
 
+> 历史 1.0.x 方案。本版无障碍训练已退出 APK；当前 1.1.00 实现与限制见
+> `../digital-interaction-engine/docs/14-consumer-pilot-1.1.md`。不要按本文恢复无障碍入口。
+
 ## 一、技术选型
 
 ### 框架：Flutter

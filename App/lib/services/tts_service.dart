@@ -32,7 +32,6 @@ class TTSService {
   /// 播报文本
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
-    if (!_initialized) await init();
 
     // 清理特殊字符
     final cleaned = text.replaceAll(
@@ -48,6 +47,7 @@ class TTSService {
     }
 
     try {
+      if (!_initialized) await init();
       final result = await _tts.speak(cleaned);
       if (!_isSpeakSuccess(result)) {
         await _speakWithNativeAndroid(cleaned);
@@ -100,6 +100,6 @@ class TTSService {
 
   void dispose() {
     _nativeChannel.invokeMethod('stopNativeTts').catchError((_) {});
-    _tts.stop();
+    _tts.stop().catchError((_) => 0);
   }
 }
