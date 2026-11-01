@@ -36,6 +36,7 @@ class _TaskHomeState extends State<TaskHome> {
     super.initState();
     session.addListener(refresh);
     ConsumerSession.bridge.setMethodCallHandler((call) async {
+      if (call.method == 'nativeSpeechDone') await session.flushGuidance();
       if (call.method == 'speechUnavailable') {
         voiceError = '手机的朗读服务没有启动，请在系统设置中启用中文文字转语音。';
         refresh();
@@ -137,7 +138,7 @@ class _TaskHomeState extends State<TaskHome> {
             builder: (c) => AlertDialog(
               title: const Text('愿意帮助小路改进吗？'),
               content: const Text(
-                '同意后，页面类型、手机与抖音版本、指导步骤类别、纠错和任务结果会自动上传，用来整理待核实的路线。不保存连续截图或你的原始目标文字。不同意也能使用导航，可随时在设置中更改。',
+                '同意后，页面类型、设备与系统版本、指导步骤类别、纠错和任务结果会自动上传，用来整理待核实的路线。不保存连续截图或你的原始目标文字。不同意也能使用导航，可随时在设置中更改。',
               ),
               actions: [
                 TextButton(
@@ -188,7 +189,7 @@ class _TaskHomeState extends State<TaskHome> {
       builder: (c) => AlertDialog(
         title: Text(done ? '目标已经完成了吗？' : '结束这次任务？'),
         content: Text(
-          done ? '请确认实际结果已达到。“申请已提交”并不等于“退款已到账”。' : '结束只代表停止导航，不会记录为成功。',
+          done ? '请确认你想做的事情已经完成。如果还没完成，可以继续让小路引导。' : '结束只代表停止导航，不会记录为成功。',
         ),
         actions: [
           TextButton(
@@ -273,7 +274,7 @@ class _TaskHomeState extends State<TaskHome> {
                   const Padding(
                     padding: EdgeInsets.only(top: 16),
                     child: Text(
-                      '小路 1.1.00 · 联网试用版\n首次重点验证抖音常见任务。暂不支持付款、转账及密码验证码输入。',
+                      '小路 1.1.02 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
                     ),
                   ),
                 ],
@@ -338,7 +339,7 @@ class _TaskHomeState extends State<TaskHome> {
               style: const TextStyle(fontSize: 20),
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                hintText: '例如：在抖音里找到我的订单',
+                hintText: '告诉小路，你想在手机上做什么',
               ),
             ),
             Row(

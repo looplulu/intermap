@@ -1,7 +1,8 @@
-# 小路 Android 1.1.00
+# 小路 Android 1.1.02
 
 面向中国中老年用户的连续任务导航试用版。用户自己操作，App 看授权画面并给出下一步语音。
-本版没有无障碍、人工训练入口或自动点击。先验证抖音常见任务。
+本版没有无障碍、人工训练入口或自动点击。接受各App和系统页面中的一般任务，实际覆盖需逐步验收。
+同页更新等待当前语音说完，只保留最新待播项；换页且指导改变时才允许打断。
 
 - 入口与系统控制：`lib/main.dart`、`android/app/src/main/kotlin/com/intermap/intermap_app/`
 - 状态机与自动反馈：`lib/services/consumer_session.dart`
@@ -13,10 +14,10 @@ flutter pub get
 flutter analyze
 flutter test
 JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
-  flutter build apk --release --build-name=1.1.00 --build-number=20
+  flutter build apk --release --build-name=1.1.02 --build-number=22
 ```
 
-输出 `build/app/outputs/flutter-apk/app-release.apk`，交付名 `小路1.1.00.apk`。
+输出 `build/app/outputs/flutter-apk/app-release.apk`，交付名 `小路1.1.02.apk`。
 当前 debug 签名仅用于内部侧载。模型密钥只在服务器；APK 不需训练密码。
 语音输入依赖系统服务，女声音质依赖手机 TTS。未做 vivo 真机验收，不保证亚秒识别。
 

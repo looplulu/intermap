@@ -26,7 +26,12 @@ Visual recognition remains the primary perception path. Reviewed maps may add
 conditional evidence later; the 1.1 pilot does not query them in its main path.
 GUI reasoning locates the current state and visible target. Any future map
 retrieval must match state and environment conditions.
-Focus first on Android and Douyin.
+As confirmed on 2026-11-01, Android navigation accepts general goals across apps
+and system pages, not just Douyin or refunds. Do not use app-specific examples in
+generic entry/confirmation UI. This does not claim every app/version is verified.
+Automatic guidance on the same stable page must wait for speech completion;
+keep only its latest pending update. Only a changed page with changed guidance
+may interrupt. Explicit user pause/stop/repeat remains under user control.
 
 Systematic real-device collection and navigation should both produce reviewable
 map evidence. Record app/OS versions, device/display context, before/after state,

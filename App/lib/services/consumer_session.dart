@@ -23,14 +23,13 @@ class ConsumerSession extends ChangeNotifier {
   final http.Client client;
   ConsumerSession({http.Client? httpClient})
     : client = httpClient ?? http.Client() {
+    tts.onComplete = () => unawaited(flushGuidance());
     _feedbackTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(retryFeedback().catchError((_) {}));
     });
   }
   late final Timer _feedbackTimer;
-  final detector = FrameChangeDetector(
-    minInterval: Duration.zero,
-  );
+  final detector = FrameChangeDetector(minInterval: Duration.zero);
   TaskState state = TaskState.idle;
   String goal = '', guidance = '', message = '', outcome = '';
   bool consent = false, detailed = false;
@@ -41,6 +40,10 @@ class ConsumerSession extends ChangeNotifier {
   bool _busy = false;
   String? _pending;
   String _spokenTarget = '';
+  String _spokenPage = '';
+  String _spokenText = '';
+  bool _flushingGuidance = false;
+  Map<String, dynamic>? _pendingGuidance;
   int? _stepId;
   Future<void> _feedbackWork = Future<void>.value();
   Future<void>? _outboxReady;
@@ -84,6 +87,9 @@ class ConsumerSession extends ChangeNotifier {
     guidance = '';
     outcome = '';
     _spokenTarget = '';
+    _spokenPage = '';
+    _spokenText = '';
+    _pendingGuidance = null;
     _stepId = null;
     state = TaskState.authorizing;
     message = '正在准备本次导航';
@@ -163,19 +169,7 @@ class ConsumerSession extends ChangeNotifier {
           ? TaskState.confirming
           : TaskState.navigating;
       message = state == TaskState.confirming ? '目标似乎已达到，请确认结果' : '等待你的操作';
-      final role = data['target_role'];
-      final targetKey = data['target_key'] as String? ?? '';
-      final target = targetKey.isNotEmpty || (role != null && role != 'other')
-          ? '${data['page_type']}:$action:${targetKey.isEmpty ? role : targetKey}'
-          : next;
-      if (next != guidance && target != _spokenTarget) {
-        guidance = next;
-        _spokenTarget = target;
-        await tts.speak(
-          detailed ? '$next ${data['expected_result'] ?? ''}' : next,
-        );
-        await bridge.invokeMethod('updateCompanion', {'text': guidance});
-      }
+      await announceGuidance(data);
       notifyListeners();
     } catch (e) {
       if (epoch == _epoch) {
@@ -199,6 +193,57 @@ class ConsumerSession extends ChangeNotifier {
           detector.reset();
         }
       }
+    }
+  }
+
+  Future<void> announceGuidance(Map<String, dynamic> data) async {
+    guidance = data['step_text'] as String;
+    final page = (data['page_key'] as String?)?.trim();
+    final pageKey = page != null && page.isNotEmpty
+        ? page
+        : '${data['app_key']}:${data['page_type']}';
+    final key = data['target_key'] as String? ?? '';
+    final role = data['target_role'];
+    final target =
+        '${data['action']}:${key.isNotEmpty
+            ? key
+            : role != null && role != 'other'
+            ? role
+            : guidance}';
+    if (guidance == _spokenText) _spokenPage = pageKey;
+    _pendingGuidance =
+        guidance == _spokenText ||
+            (pageKey == _spokenPage && target == _spokenTarget)
+        ? null
+        : {...data, '_page': pageKey, '_target': target};
+    await bridge.invokeMethod('updateCompanion', {'text': guidance});
+    await flushGuidance();
+  }
+
+  Future<void> flushGuidance() async {
+    if (_flushingGuidance) return;
+    final data = _pendingGuidance;
+    if (data == null ||
+        !{TaskState.navigating, TaskState.confirming}.contains(state)) {
+      return;
+    }
+    final page = data['_page'] as String;
+    _flushingGuidance = true;
+    try {
+      final started = await tts.speak(
+        detailed
+            ? '${data['step_text']} ${data['expected_result'] ?? ''}'
+            : data['step_text'] as String,
+        interrupt: _spokenPage.isNotEmpty && page != _spokenPage,
+      );
+      if (started && identical(data, _pendingGuidance)) {
+        _spokenPage = page;
+        _spokenTarget = data['_target'] as String;
+        _spokenText = data['step_text'] as String;
+        _pendingGuidance = null;
+      }
+    } finally {
+      _flushingGuidance = false;
     }
   }
 
@@ -268,6 +313,7 @@ class ConsumerSession extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _pendingGuidance = null;
     ++_epoch;
     _pending = null;
     state = TaskState.paused;
@@ -302,6 +348,8 @@ class ConsumerSession extends ChangeNotifier {
       if (epoch != _epoch) return;
       detector.reset();
       _spokenTarget = '';
+      _spokenPage = '';
+      _spokenText = '';
       guidance = '';
       state = TaskState.navigating;
       message = '重新查看当前画面';
@@ -325,7 +373,10 @@ class ConsumerSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> repeat() => tts.speak(guidance);
+  Future<void> repeat() async {
+    await tts.speak(guidance);
+  }
+
   Future<void> help(String kind) async {
     ++_epoch;
     _pending = null;
@@ -345,6 +396,7 @@ class ConsumerSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    tts.onComplete = null;
     _feedbackTimer.cancel();
     ++_epoch;
     capture.stop();

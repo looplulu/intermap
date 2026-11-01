@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -30,8 +31,63 @@ void main() {
     expect(find.text('开始导航'), findsOneWidget);
     expect(find.text('训练'), findsNothing);
     expect(find.text('无障碍'), findsNothing);
+    expect(find.textContaining('抖音'), findsNothing);
+    expect(find.textContaining('退款'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  test(
+    'same-page speech waits, latest guidance replaces pending and new pages interrupt',
+    () async {
+      var speaking = false;
+      final spoken = <String>[];
+      final interrupts = <bool>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ConsumerSession.bridge, (call) async {
+            if (call.method == 'speakNative') {
+              final args = call.arguments as Map;
+              if (speaking && args['interrupt'] == false) return 'busy';
+              speaking = true;
+              spoken.add(args['text'] as String);
+              interrupts.add(args['interrupt'] as bool);
+              return true;
+            }
+            return null;
+          });
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final session = ConsumerSession();
+      session.state = TaskState.navigating;
+      Map<String, dynamic> step(String page, String text) => {
+        'page_key': page,
+        'page_type': 'other',
+        'action': 'click',
+        'target_key': text,
+        'step_text': text,
+      };
+      await session.announceGuidance(step('camera/settings', '点击左上角设置'));
+      await session.announceGuidance(step('camera/settings', '点击右侧选项'));
+      await session.announceGuidance(step('camera/settings', '点击下方开关'));
+      expect(spoken, ['点击左上角设置']);
+      speaking = false;
+      await session.flushGuidance();
+      expect(spoken, ['点击左上角设置', '点击下方开关']);
+      await session.announceGuidance(step('camera/permissions', '点击下方允许'));
+      expect(spoken.last, '点击下方允许');
+      expect(interrupts.last, isTrue);
+      await session.announceGuidance(
+        step('camera/permission-notice', '点击下方允许'),
+      );
+      expect(spoken.length, 3);
+      await session.announceGuidance(
+        step('camera/permission-notice', '点击左侧返回'),
+      );
+      await session.pause();
+      speaking = false;
+      await session.flushGuidance();
+      expect(spoken.length, 3);
+      session.dispose();
+    },
+  );
   test(
     'full goal is preserved and refusing projection never marks success',
     () async {

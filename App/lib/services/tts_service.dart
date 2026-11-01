@@ -7,6 +7,8 @@ class TTSService {
   final FlutterTts _tts = FlutterTts();
   static const MethodChannel _nativeChannel = MethodChannel('com.intermap/app');
   bool _initialized = false;
+  bool _fallbackSpeaking = false;
+  VoidCallback? onComplete;
   double _speechRate = 0.46; // 放慢一点，减少机械感
   double _pitch = 1.08;
   final String _currentLanguage = 'zh-CN';
@@ -19,6 +21,14 @@ class TTSService {
     await _tts.setPitch(_pitch);
     await _tts.setVolume(1.0);
     await _tts.awaitSpeakCompletion(false);
+    void finished() {
+      _fallbackSpeaking = false;
+      onComplete?.call();
+    }
+
+    _tts.setCompletionHandler(finished);
+    _tts.setCancelHandler(finished);
+    _tts.setErrorHandler((_) => finished());
     // 尝试设置中文女声
     try {
       await _tts.setVoice({'name': 'zh-CN', 'locale': 'zh-CN'});
@@ -30,8 +40,10 @@ class TTSService {
   }
 
   /// 播报文本
-  Future<void> speak(String text) async {
-    if (text.trim().isEmpty) return;
+  Future<bool> speak(String text, {bool interrupt = true}) async {
+    if (!interrupt && _fallbackSpeaking) return false;
+    if (interrupt && _fallbackSpeaking) await _tts.stop();
+    if (text.trim().isEmpty) return false;
 
     // 清理特殊字符
     final cleaned = text.replaceAll(
@@ -39,21 +51,31 @@ class TTSService {
       '',
     );
 
-    if (cleaned.trim().isEmpty) return;
+    if (cleaned.trim().isEmpty) return false;
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final nativeSpoken = await _speakWithNativeAndroid(cleaned);
-      if (nativeSpoken) return;
+      final nativeSpoken = await _speakWithNativeAndroid(
+        cleaned,
+        interrupt: interrupt,
+      );
+      if (nativeSpoken == 'busy') return false;
+      if (nativeSpoken == 'started') return true;
     }
 
     try {
       if (!_initialized) await init();
+      _fallbackSpeaking = true;
       final result = await _tts.speak(cleaned);
       if (!_isSpeakSuccess(result)) {
-        await _speakWithNativeAndroid(cleaned);
+        _fallbackSpeaking = false;
+        return await _speakWithNativeAndroid(cleaned, interrupt: interrupt) ==
+            'started';
       }
+      return true;
     } catch (e) {
-      await _speakWithNativeAndroid(cleaned);
+      _fallbackSpeaking = false;
+      return await _speakWithNativeAndroid(cleaned, interrupt: interrupt) ==
+          'started';
     }
   }
 
@@ -61,17 +83,25 @@ class TTSService {
     return result == 1 || result == '1' || result == true;
   }
 
-  Future<bool> _speakWithNativeAndroid(String text) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return false;
+  Future<String> _speakWithNativeAndroid(
+    String text, {
+    required bool interrupt,
+  }) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return 'unavailable';
     try {
-      final ok = await _nativeChannel.invokeMethod<bool>('speakNative', {
+      final ok = await _nativeChannel.invokeMethod<dynamic>('speakNative', {
         'text': text,
         'speechRate': _speechRate,
         'pitch': _pitch,
+        'interrupt': interrupt,
       });
-      return ok == true;
+      return ok == 'busy'
+          ? 'busy'
+          : ok == true
+          ? 'started'
+          : 'unavailable';
     } catch (_) {
-      return false;
+      return 'unavailable';
     }
   }
 

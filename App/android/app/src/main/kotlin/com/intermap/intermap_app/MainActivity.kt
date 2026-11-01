@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import android.speech.tts.UtteranceProgressListener
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -29,6 +30,8 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var nativeTts: TextToSpeech? = null
     private var nativeTtsReady = false
+    private var nativeSpeaking = false
+    private var nativeUtteranceId: String? = null
     private val pendingTtsTexts = mutableListOf<Triple<String, Float, Float>>()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -52,7 +55,7 @@ class MainActivity : FlutterActivity() {
                         "device_model" to Build.MODEL, "os_version" to Build.VERSION.RELEASE,
                         "sdk" to Build.VERSION.SDK_INT, "width" to metrics.widthPixels,
                         "height" to metrics.heightPixels, "density" to metrics.density,
-                        "douyin_version" to douyin, "app_version" to "1.1.00"))
+                        "douyin_version" to douyin, "app_version" to "1.1.02"))
                 }
                 "moveToForeground" -> { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); result.success(null) }
                 "loadSettings" -> {
@@ -99,12 +102,19 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "speakNative" -> {
+                    if (call.argument<Boolean>("interrupt") == false && (nativeSpeaking || pendingTtsTexts.isNotEmpty())) {
+                        result.success("busy")
+                        return@setMethodCallHandler
+                    }
+                    pendingTtsTexts.clear()
                     val text = call.argument<String>("text").orEmpty()
                     val speechRate = (call.argument<Double>("speechRate") ?: 0.5).toFloat()
                     val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
                     result.success(speakNative(text, speechRate, pitch))
                 }
                 "stopNativeTts" -> {
+                    nativeSpeaking = false
+                    nativeUtteranceId = null
                     pendingTtsTexts.clear()
                     nativeTts?.stop()
                     result.success(null)
@@ -189,6 +199,12 @@ class MainActivity : FlutterActivity() {
             nativeTts = TextToSpeech(applicationContext) { status ->
                 if (status == TextToSpeech.SUCCESS) {
                     nativeTtsReady = true
+                    nativeTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(id: String?) {}
+                        override fun onDone(id: String?) { speechFinished(id) }
+                        override fun onError(id: String?) { speechFinished(id) }
+                        override fun onStop(id: String?, interrupted: Boolean) { speechFinished(id) }
+                    })
                     nativeTts?.language = Locale.SIMPLIFIED_CHINESE
                     selectComfortableChineseVoice()
                     flushPendingTts()
@@ -249,14 +265,28 @@ class MainActivity : FlutterActivity() {
 
     private fun speakNow(utterance: Triple<String, Float, Float>) {
         val (text, speechRate, pitch) = utterance
+        val id = "intermap_${System.nanoTime()}"
+        nativeUtteranceId = id
+        nativeSpeaking = true
         nativeTts?.setSpeechRate(speechRate)
         nativeTts?.setPitch(pitch)
-        nativeTts?.speak(
+        val result = nativeTts?.speak(
             text,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "intermap_${System.currentTimeMillis()}"
+            id
         )
+        if (result == TextToSpeech.ERROR) speechFinished(id)
+    }
+
+    private fun speechFinished(id: String?) {
+        mainHandler.post {
+            if (id != null && id == nativeUtteranceId) {
+                nativeSpeaking = false
+                nativeUtteranceId = null
+                appBridge?.invokeMethod("nativeSpeechDone", null)
+            }
+        }
     }
 
     override fun onResume() {

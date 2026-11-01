@@ -28,6 +28,10 @@ test('no opt-in produces no persistent feedback files', async()=>{
 test('unknown outcomes and invented action types are rejected',()=>{
   assert.throws(()=>normalize({page_type:'orders',action:'auto_click',step_text:'点击'}),/INVALID_MODEL/);
 });
+test('any app identity and stable page keys survive normalization',()=>{
+  const result=normalize({app_key:'com.example.camera',page_type:'other',page_key:'camera/settings',action:'click',step_text:'点击左上角设置'});
+  assert.equal(result.app_key,'com.example.camera'); assert.equal(result.page_key,'camera/settings');
+});
 test('unauthorized frame requests cannot invoke the model',async()=>{
   const store=new ConsumerNavigation('/unused',()=>{throw Error('must not run');});
   await assert.rejects(store.dispatch('frame',{},'bad','test'),/UNAUTHORIZED/);
