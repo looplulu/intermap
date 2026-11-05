@@ -39,6 +39,7 @@ class MainActivity : FlutterActivity() {
 
         companion = CompanionOverlay(this) { action, goal -> appBridge?.invokeMethod("companionAction", mapOf("action" to action, "goal" to goal)) }
         ScreenCaptureService.onStopped = { mainHandler.post { appBridge?.invokeMethod("captureStopped", null) } }
+        ScreenCaptureService.onBlackScreen = { mainHandler.post { appBridge?.invokeMethod("captureBlack", null) } }
         // App 通用 MethodChannel
         appBridge = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APP_CHANNEL)
         appBridge!!.setMethodCallHandler { call, result ->
@@ -55,7 +56,7 @@ class MainActivity : FlutterActivity() {
                         "device_model" to Build.MODEL, "os_version" to Build.VERSION.RELEASE,
                         "sdk" to Build.VERSION.SDK_INT, "width" to metrics.widthPixels,
                         "height" to metrics.heightPixels, "density" to metrics.density,
-                        "douyin_version" to douyin, "app_version" to "1.1.02"))
+                        "douyin_version" to douyin, "app_version" to "1.1.03"))
                 }
                 "moveToForeground" -> { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); result.success(null) }
                 "loadSettings" -> {
@@ -297,6 +298,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         companion?.hide()
         ScreenCaptureService.onStopped = null
+        ScreenCaptureService.onBlackScreen = null
         speechResult?.success(null)
         speechResult = null
         nativeTts?.stop()

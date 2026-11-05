@@ -36,6 +36,7 @@ class ScreenCaptureService : Service() {
         /** 截屏回调，通过静态变量让 MainActivity 传递给 EventChannel */
         var onFrameCaptured: ((String) -> Unit)? = null
         var onStopped: (() -> Unit)? = null
+        var onBlackScreen: (() -> Unit)? = null
         var latestFrame: String? = null
             private set
 
@@ -52,6 +53,8 @@ class ScreenCaptureService : Service() {
     private var handler: Handler? = null
     private var lastFrameAtMs = 0L
     private var pendingFrame: Runnable? = null
+    private var blackPending = false
+    private val blackTimeout = Runnable { if (blackPending) onBlackScreen?.invoke() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -185,6 +188,19 @@ class ScreenCaptureService : Service() {
                 var bitmap: Bitmap? = null
                 try {
                     bitmap = imageToBitmap(image, width, height)
+                    var dark = 0; var samples = 0
+                    for (y in height/10 until height*9/10 step (height/40).coerceAtLeast(1)) {
+                        for (x in width/10 until width*9/10 step (width/24).coerceAtLeast(1)) {
+                            val pixel = bitmap.getPixel(x,y)
+                            if (android.graphics.Color.red(pixel)<12 && android.graphics.Color.green(pixel)<12 && android.graphics.Color.blue(pixel)<12) dark++
+                            samples++
+                        }
+                    }
+                    if (dark > samples*0.95) {
+                        if (!blackPending) { blackPending=true; handler?.postDelayed(blackTimeout,3000) }
+                        return@Runnable
+                    }
+                    blackPending=false; handler?.removeCallbacks(blackTimeout)
                     CompanionOverlay.mask(bitmap)
                     val base64 = bitmapToBase64(bitmap, 65)
                     latestFrame = base64
@@ -246,6 +262,8 @@ class ScreenCaptureService : Service() {
         isRunning = false
         lastFrameAtMs = 0L
         latestFrame = null
+        blackPending = false
+        handler?.removeCallbacks(blackTimeout)
         pendingFrame?.let { handler?.removeCallbacks(it) }
         pendingFrame = null
         abandonAudioFocus()

@@ -45,6 +45,7 @@ class CompanionOverlay(private val activity: Activity, private val action: (Stri
             else -> false
         } }
         box.addView(title)
+        box.addView(Button(activity).apply { text="结束"; textSize=16f; setOnClickListener { action("cancelled",goal) } })
         if(expanded) {
             val content=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL }
             box.addView(ScrollView(activity).apply { addView(content) },LinearLayout.LayoutParams(-1,dp(440).coerceAtMost(activity.resources.displayMetrics.heightPixels-dp(140))))

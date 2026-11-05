@@ -45,6 +45,8 @@ void main() {
           .setMockMethodCallHandler(ConsumerSession.bridge, (call) async {
             if (call.method == 'speakNative') {
               final args = call.arguments as Map;
+              expect(args['speechRate'], closeTo(0.92, 0.001));
+              expect(args['pitch'], 1.0);
               if (speaking && args['interrupt'] == false) return 'busy';
               speaking = true;
               spoken.add(args['text'] as String);
@@ -102,6 +104,34 @@ void main() {
       expect(goal, '帮我找到刚才收藏的视频');
       expect(session.state, TaskState.paused);
       expect(session.outcome, isEmpty);
+      session.dispose();
+    },
+  );
+  testWidgets('suspected completion pauses capture and offers a real exit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const XiaoluApp());
+    await tester.pumpAndSettle();
+    final dynamic home = tester.state(find.byType(TaskHome));
+    final session = home.session as ConsumerSession;
+    session.state = TaskState.confirming;
+    session.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(session.state, TaskState.paused);
+    expect(find.text('停止导航'), findsOneWidget);
+    await tester.tap(find.text('停止导航'));
+    await tester.pumpAndSettle();
+    expect(session.state, TaskState.ended);
+  });
+  test(
+    'black capture pauses with conditional permission and privacy advice',
+    () async {
+      final session = ConsumerSession();
+      session.state = TaskState.navigating;
+      await session.handleBlackScreen();
+      expect(session.state, TaskState.paused);
+      expect(session.message, contains('重新允许'));
+      expect(session.message, contains('无法靠授权解除'));
       session.dispose();
     },
   );

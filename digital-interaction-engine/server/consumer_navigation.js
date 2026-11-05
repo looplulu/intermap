@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const PAGES = ['home', 'profile', 'orders', 'order_detail', 'customer_service', 'search', 'settings', 'refund', 'result', 'login', 'other'];
 const ACTIONS = ['click', 'scroll', 'back', 'wait', 'choose', 'clarify', 'confirm_result', 'private'];
-const FEEDBACK = ['not_found', 'wrong_step', 'completed', 'cancelled', 'pause', 'resume', 'client_error'];
+const FEEDBACK = ['not_found', 'wrong_step', 'completed', 'cancelled', 'pause', 'resume', 'client_error', 'capture_black'];
 const TARGETS = ['orders_entry', 'profile_tab', 'support_entry', 'search_entry', 'refund_entry', 'submit_request', 'item_choice', 'back', 'other'];
 
 class ConsumerNavigation {

@@ -31,12 +31,14 @@ class _TaskHomeState extends State<TaskHome> {
   bool accepted = false;
   bool busyVoice = false;
   String voiceError = '';
+  bool _endPromptOpen = false;
   @override
   void initState() {
     super.initState();
     session.addListener(refresh);
     ConsumerSession.bridge.setMethodCallHandler((call) async {
       if (call.method == 'nativeSpeechDone') await session.flushGuidance();
+      if (call.method == 'captureBlack') await session.handleBlackScreen();
       if (call.method == 'speechUnavailable') {
         voiceError = '手机的朗读服务没有启动，请在系统设置中启用中文文字转语音。';
         refresh();
@@ -101,6 +103,13 @@ class _TaskHomeState extends State<TaskHome> {
 
   void refresh() {
     if (mounted) setState(() {});
+    if (session.state == TaskState.confirming && !_endPromptOpen) {
+      _endPromptOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await confirmEnd(true, automatic: true);
+        _endPromptOpen = false;
+      });
+    }
   }
 
   Future<void> begin() async {
@@ -178,33 +187,40 @@ class _TaskHomeState extends State<TaskHome> {
     if (mounted) setState(() => busyVoice = false);
   }
 
-  Future<void> confirmEnd(bool done) async {
+  Future<void> confirmEnd(bool done, {bool automatic = false}) async {
     if (session.state == TaskState.idle || session.state == TaskState.ended) {
       return;
     }
+    await session.pause();
     await ConsumerSession.bridge.invokeMethod('moveToForeground');
     if (!mounted) return;
-    final yes = await showDialog<bool>(
+    final choice = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (c) => AlertDialog(
         title: Text(done ? '目标已经完成了吗？' : '结束这次任务？'),
         content: Text(
           done ? '请确认你想做的事情已经完成。如果还没完成，可以继续让小路引导。' : '结束只代表停止导航，不会记录为成功。',
         ),
         actions: [
+          if (automatic)
+            TextButton(
+              onPressed: () => Navigator.pop(c, 'stop'),
+              child: const Text('停止导航'),
+            ),
           TextButton(
-            onPressed: () => Navigator.pop(c, false),
+            onPressed: () => Navigator.pop(c, 'continue'),
             child: const Text('继续导航'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(c, true),
+            onPressed: () => Navigator.pop(c, done ? 'complete' : 'stop'),
             child: Text(done ? '确认完成' : '结束任务'),
           ),
         ],
       ),
     );
-    if (yes == true) {
-      await session.finish(done);
+    if (choice == 'complete' || choice == 'stop') {
+      await session.finish(choice == 'complete');
     } else if (session.state == TaskState.paused ||
         session.state == TaskState.confirming) {
       await session.resume();
@@ -274,7 +290,7 @@ class _TaskHomeState extends State<TaskHome> {
                   const Padding(
                     padding: EdgeInsets.only(top: 16),
                     child: Text(
-                      '小路 1.1.02 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
+                      '小路 1.1.03 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
                     ),
                   ),
                 ],

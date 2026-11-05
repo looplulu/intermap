@@ -324,6 +324,17 @@ class ConsumerSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> handleBlackScreen() async {
+    if (state != TaskState.navigating && state != TaskState.waiting) return;
+    await pause();
+    message =
+        '连续黑屏，已暂停。请先解锁手机，再点继续并重新允许屏幕共享。若系统提供共享范围，请选择要使用的App或整个屏幕；如果只有某个页面一直黑屏，可能是该页面禁止录屏，无法靠授权解除，请返回可共享页面后继续。';
+    await bridge.invokeMethod('updateCompanion', {'text': message});
+    await tts.speak('暂时看不到画面，已暂停。请解锁手机，点继续重新允许屏幕共享。若只有某个页面黑屏，可能是页面的隐私保护。');
+    await feedback('capture_black');
+    notifyListeners();
+  }
+
   Future<void> resume() async {
     if (_token.isEmpty) return start(goal);
     if (_busy) {

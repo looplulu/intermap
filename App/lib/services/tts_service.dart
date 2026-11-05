@@ -10,7 +10,7 @@ class TTSService {
   bool _fallbackSpeaking = false;
   VoidCallback? onComplete;
   double _speechRate = 0.46; // 放慢一点，减少机械感
-  double _pitch = 1.08;
+  double _pitch = 1.0;
   final String _currentLanguage = 'zh-CN';
 
   Future<void> init() async {
@@ -91,7 +91,7 @@ class TTSService {
     try {
       final ok = await _nativeChannel.invokeMethod<dynamic>('speakNative', {
         'text': text,
-        'speechRate': _speechRate,
+        'speechRate': (_speechRate * 2).clamp(0.2, 1.5),
         'pitch': _pitch,
         'interrupt': interrupt,
       });
