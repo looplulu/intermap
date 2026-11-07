@@ -56,7 +56,7 @@ class MainActivity : FlutterActivity() {
                         "device_model" to Build.MODEL, "os_version" to Build.VERSION.RELEASE,
                         "sdk" to Build.VERSION.SDK_INT, "width" to metrics.widthPixels,
                         "height" to metrics.heightPixels, "density" to metrics.density,
-                        "douyin_version" to douyin, "app_version" to "1.1.03"))
+                        "douyin_version" to douyin, "app_version" to "1.1.04"))
                 }
                 "moveToForeground" -> { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); result.success(null) }
                 "loadSettings" -> {

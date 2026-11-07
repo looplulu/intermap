@@ -35,18 +35,18 @@ void main() {
     expect(find.textContaining('退款'), findsNothing);
     expect(tester.takeException(), isNull);
   });
-  test(
-    'same-page speech waits, latest guidance replaces pending and new pages interrupt',
-    () async {
+  testWidgets(
+    'same-page reminder waits four seconds after audio ends and new pages interrupt',
+    (tester) async {
       var speaking = false;
       final spoken = <String>[];
       final interrupts = <bool>[];
+      final speechArgs = <Map>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(ConsumerSession.bridge, (call) async {
             if (call.method == 'speakNative') {
               final args = call.arguments as Map;
-              expect(args['speechRate'], closeTo(0.92, 0.001));
-              expect(args['pitch'], 1.0);
+              speechArgs.add(args);
               if (speaking && args['interrupt'] == false) return 'busy';
               speaking = true;
               spoken.add(args['text'] as String);
@@ -71,8 +71,19 @@ void main() {
       await session.announceGuidance(step('camera/settings', '点击下方开关'));
       expect(spoken, ['点击左上角设置']);
       speaking = false;
+      session.speechCompleted();
       await session.flushGuidance();
+      expect(spoken, ['点击左上角设置']);
+      await tester.pump(const Duration(milliseconds: 3999));
+      expect(spoken.length, 1);
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.pumpAndSettle();
       expect(spoken, ['点击左上角设置', '点击下方开关']);
+      expect(speechArgs.last['speechRate'], closeTo(0.92, 0.001));
+      expect(speechArgs.last['pitch'], 1.0);
       await session.announceGuidance(step('camera/permissions', '点击下方允许'));
       expect(spoken.last, '点击下方允许');
       expect(interrupts.last, isTrue);
@@ -88,6 +99,7 @@ void main() {
       await session.flushGuidance();
       expect(spoken.length, 3);
       session.dispose();
+      debugDefaultTargetPlatformOverride = null;
     },
   );
   test(
@@ -124,14 +136,22 @@ void main() {
     expect(session.state, TaskState.ended);
   });
   test(
-    'black capture pauses with conditional permission and privacy advice',
+    'black capture keeps projection while offering privacy recovery advice',
     () async {
+      var captureStops = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ConsumerSession.bridge, (call) async {
+            if (call.method == 'stopScreenCapture') captureStops++;
+            return null;
+          });
       final session = ConsumerSession();
       session.state = TaskState.navigating;
       await session.handleBlackScreen();
-      expect(session.state, TaskState.paused);
-      expect(session.message, contains('重新允许'));
-      expect(session.message, contains('无法靠授权解除'));
+      expect(session.state, TaskState.recovering);
+      expect(session.message, contains('共享仍保留'));
+      expect(session.message, contains('隐私应用保护'));
+      expect(session.message, contains('该项已关闭'));
+      expect(captureStops, 0);
       session.dispose();
     },
   );

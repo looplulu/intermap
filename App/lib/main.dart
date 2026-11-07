@@ -37,7 +37,7 @@ class _TaskHomeState extends State<TaskHome> {
     super.initState();
     session.addListener(refresh);
     ConsumerSession.bridge.setMethodCallHandler((call) async {
-      if (call.method == 'nativeSpeechDone') await session.flushGuidance();
+      if (call.method == 'nativeSpeechDone') session.speechCompleted();
       if (call.method == 'captureBlack') await session.handleBlackScreen();
       if (call.method == 'speechUnavailable') {
         voiceError = '手机的朗读服务没有启动，请在系统设置中启用中文文字转语音。';
@@ -290,7 +290,7 @@ class _TaskHomeState extends State<TaskHome> {
                   const Padding(
                     padding: EdgeInsets.only(top: 16),
                     child: Text(
-                      '小路 1.1.03 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
+                      '小路 1.1.04 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
                     ),
                   ),
                 ],

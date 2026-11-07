@@ -1,9 +1,9 @@
-# 小路 Android 1.1.03
+# 小路 Android 1.1.04
 
 面向中国中老年用户的连续任务导航试用版。用户自己操作，App 看授权画面并给出下一步语音。
 本版没有无障碍、人工训练入口或自动点击。接受各App和系统页面中的一般任务，实际覆盖需逐步验收。
 同页更新等待当前语音说完，只保留最新待播项；换页且指导改变时才允许打断。
-增加常显结束、疑似完成先暂停并确认、持续黑屏条件式提示，修正原生TTS半速问题。
+增加常显结束、疑似完成先暂停并确认；同页说完后4秒再提醒一次，黑屏保留共享并引导恢复。
 当前真实测试云端推理中位数约7.45秒，1秒有效指导与视频布局分离尚未达标。
 
 - 入口与系统控制：`lib/main.dart`、`android/app/src/main/kotlin/com/intermap/intermap_app/`
@@ -16,10 +16,10 @@ flutter pub get
 flutter analyze
 flutter test
 JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.19/libexec/openjdk.jdk/Contents/Home \
-  flutter build apk --release --build-name=1.1.03 --build-number=23
+  flutter build apk --release --build-name=1.1.04 --build-number=24
 ```
 
-输出 `build/app/outputs/flutter-apk/app-release.apk`，交付名 `小路1.1.03.apk`。
+输出 `build/app/outputs/flutter-apk/app-release.apk`，交付名 `小路1.1.04.apk`。
 当前 debug 签名仅用于内部侧载。模型密钥只在服务器；APK 不需训练密码。
 语音输入依赖系统服务，女声音质依赖手机 TTS。未做 vivo 真机验收，不保证亚秒识别。
 

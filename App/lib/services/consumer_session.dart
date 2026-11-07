@@ -12,6 +12,7 @@ enum TaskState {
   navigating,
   waiting,
   paused,
+  recovering,
   confirming,
   ended,
 }
@@ -23,7 +24,7 @@ class ConsumerSession extends ChangeNotifier {
   final http.Client client;
   ConsumerSession({http.Client? httpClient})
     : client = httpClient ?? http.Client() {
-    tts.onComplete = () => unawaited(flushGuidance());
+    tts.onComplete = speechCompleted;
     _feedbackTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(retryFeedback().catchError((_) {}));
     });
@@ -43,6 +44,39 @@ class ConsumerSession extends ChangeNotifier {
   String _spokenPage = '';
   String _spokenText = '';
   bool _flushingGuidance = false;
+  Timer? _reminderTimer;
+  bool _speechActive = false;
+  bool _reminded = false;
+  bool _quiet = false;
+  String _currentPage = '';
+
+  void speechCompleted() {
+    _speechActive = false;
+    _quiet = true;
+    _reminderTimer?.cancel();
+    if (_spokenPage.isEmpty && _pendingGuidance != null) {
+      unawaited(flushGuidance());
+      return;
+    }
+    if (state != TaskState.navigating || _reminded || _spokenText.isEmpty) {
+      return;
+    }
+    _reminderTimer = Timer(const Duration(seconds: 4), () async {
+      if (_disposed ||
+          state != TaskState.navigating ||
+          _speechActive ||
+          _busy ||
+          _pending != null ||
+          _currentPage != _spokenPage) {
+        return;
+      }
+      _reminded = true;
+      _quiet = false;
+      _pendingGuidance = null;
+      _speechActive = await tts.speak(guidance, interrupt: false);
+    });
+  }
+
   Map<String, dynamic>? _pendingGuidance;
   int? _stepId;
   Future<void> _feedbackWork = Future<void>.value();
@@ -131,6 +165,12 @@ class ConsumerSession extends ChangeNotifier {
   }
 
   void _frame(String frame) {
+    if (state == TaskState.recovering) {
+      state = TaskState.navigating;
+      detector.reset();
+      message = '画面已恢复，正在接续原任务';
+      notifyListeners();
+    }
     if (state != TaskState.navigating && state != TaskState.waiting) return;
     if (!detector.shouldAnalyze(frame)) return;
     if (_busy) {
@@ -185,9 +225,7 @@ class ConsumerSession extends ChangeNotifier {
         _busy = false;
         final pending = _pending;
         _pending = null;
-        if (epoch == _epoch &&
-            pending != null &&
-            state == TaskState.navigating) {
+        if (pending != null && state == TaskState.navigating) {
           unawaited(_analyze(pending));
         } else if (epoch != _epoch && state == TaskState.navigating) {
           detector.reset();
@@ -202,6 +240,14 @@ class ConsumerSession extends ChangeNotifier {
     final pageKey = page != null && page.isNotEmpty
         ? page
         : '${data['app_key']}:${data['page_type']}';
+    _currentPage = pageKey;
+    if (_spokenPage.isNotEmpty && pageKey == _spokenPage) {
+      await bridge.invokeMethod('updateCompanion', {'text': guidance});
+      return;
+    }
+    _reminderTimer?.cancel();
+    _quiet = false;
+    _reminded = false;
     final key = data['target_key'] as String? ?? '';
     final role = data['target_role'];
     final target =
@@ -228,6 +274,7 @@ class ConsumerSession extends ChangeNotifier {
       return;
     }
     final page = data['_page'] as String;
+    if (_quiet && page == _spokenPage) return;
     _flushingGuidance = true;
     try {
       final started = await tts.speak(
@@ -237,6 +284,7 @@ class ConsumerSession extends ChangeNotifier {
         interrupt: _spokenPage.isNotEmpty && page != _spokenPage,
       );
       if (started && identical(data, _pendingGuidance)) {
+        _speechActive = true;
         _spokenPage = page;
         _spokenTarget = data['_target'] as String;
         _spokenText = data['step_text'] as String;
@@ -313,6 +361,8 @@ class ConsumerSession extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _reminderTimer?.cancel();
+    _speechActive = false;
     _pendingGuidance = null;
     ++_epoch;
     _pending = null;
@@ -326,11 +376,21 @@ class ConsumerSession extends ChangeNotifier {
 
   Future<void> handleBlackScreen() async {
     if (state != TaskState.navigating && state != TaskState.waiting) return;
-    await pause();
+    ++_epoch;
+    _pending = null;
+    _pendingGuidance = null;
+    _reminderTimer?.cancel();
+    _spokenPage = '';
+    _spokenText = '';
+    _speechActive = false;
+    await tts.stop();
+    state = TaskState.recovering;
     message =
-        '连续黑屏，已暂停。请先解锁手机，再点继续并重新允许屏幕共享。若系统提供共享范围，请选择要使用的App或整个屏幕；如果只有某个页面一直黑屏，可能是该页面禁止录屏，无法靠授权解除，请返回可共享页面后继续。';
+        '暂时看不到画面，共享仍保留。若你开启了隐私应用保护，请打开系统屏幕共享控制，找到“屏幕共享保护”，自行决定是否关闭“隐私应用保护”；通知等其他保护可以保留。若该项已关闭，请检查手机是否锁屏、共享范围是否正确，或返回其他页面验证；App自身禁止录屏的页面不能靠此开关解除。画面恢复后会接续原任务。';
     await bridge.invokeMethod('updateCompanion', {'text': message});
-    await tts.speak('暂时看不到画面，已暂停。请解锁手机，点继续重新允许屏幕共享。若只有某个页面黑屏，可能是页面的隐私保护。');
+    await tts.speak(
+      '暂时看不到画面，共享还保留着。如果你开了隐私应用保护，请打开系统的屏幕共享保护，按需要关闭隐私应用保护。其他保护不用关。如果它已经关了，先返回其他页面看看。',
+    );
     await feedback('capture_black');
     notifyListeners();
   }
@@ -385,10 +445,16 @@ class ConsumerSession extends ChangeNotifier {
   }
 
   Future<void> repeat() async {
+    _reminderTimer?.cancel();
+    _reminded = true;
     await tts.speak(guidance);
   }
 
   Future<void> help(String kind) async {
+    _reminderTimer?.cancel();
+    _quiet = false;
+    _spokenPage = '';
+    _spokenText = '';
     ++_epoch;
     _pending = null;
     await feedback(kind);
@@ -407,6 +473,7 @@ class ConsumerSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _reminderTimer?.cancel();
     tts.onComplete = null;
     _feedbackTimer.cancel();
     ++_epoch;

@@ -30,8 +30,15 @@ As confirmed on 2026-11-01, Android navigation accepts general goals across apps
 and system pages, not just Douyin or refunds. Do not use app-specific examples in
 generic entry/confirmation UI. This does not claim every app/version is verified.
 Automatic guidance on the same stable page must wait for speech completion;
-keep only its latest pending update. Only a changed page with changed guidance
+as confirmed on 2026-11-07, leave four seconds of silence after audio completion
+before one automatic reminder. Do not replay immediately when the model rephrases
+the same page. Do not repeat stale guidance while a new frame is being analyzed.
+Only a changed page with changed guidance
 may interrupt. Explicit user pause/stop/repeat remains under user control.
+Black capture enters recovery without cancelling MediaProjection. The supplied
+vivo screenshots show Screen Sharing Protection > Privacy App Protection;
+only guide this optional control, not all privacy switches. Never infer its
+enabled state from black pixels or promise this overrides app-level protection.
 
 Systematic real-device collection and navigation should both produce reviewable
 map evidence. Record app/OS versions, device/display context, before/after state,

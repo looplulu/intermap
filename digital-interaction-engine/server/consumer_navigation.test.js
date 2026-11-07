@@ -32,6 +32,12 @@ test('any app identity and stable page keys survive normalization',()=>{
   const result=normalize({app_key:'com.example.camera',page_type:'other',page_key:'camera/settings',action:'click',step_text:'点击左上角设置'});
   assert.equal(result.app_key,'com.example.camera'); assert.equal(result.page_key,'camera/settings');
 });
+test('WeChat aliases cannot manufacture a page change',()=>{
+  const base={page_type:'profile',action:'click',step_text:'点击头像'};
+  const a=normalize({...base,app_key:'weixin',page_key:'weixin/profile'});
+  const b=normalize({...base,app_key:'com.tencent.mm',page_key:'com.tencent.mm/profile'});
+  assert.equal(a.page_key,b.page_key); assert.equal(a.app_key,b.app_key);
+});
 test('unauthorized frame requests cannot invoke the model',async()=>{
   const store=new ConsumerNavigation('/unused',()=>{throw Error('must not run');});
   await assert.rejects(store.dispatch('frame',{},'bad','test'),/UNAUTHORIZED/);
