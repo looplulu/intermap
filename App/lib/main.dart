@@ -290,7 +290,7 @@ class _TaskHomeState extends State<TaskHome> {
                   const Padding(
                     padding: EdgeInsets.only(top: 16),
                     child: Text(
-                      '小路 1.1.04 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
+                      '小路 1.1.05 · 联网试用版\n根据你的目标和当前画面提供指导。暂不支持付款、转账及密码验证码输入。',
                     ),
                   ),
                 ],

@@ -59,8 +59,12 @@ and `App/README.md` first. Consumer feedback is stored in
 `POST /intermap/api/consumer/review` requires the existing training password;
 the public app never receives that password or model API keys.
 `ARK_API_KEY` is required on the capture service; `ARK_MODEL` optionally overrides
-the default visual model. `DEEPSEEK_API_KEY` is optional and currently absent on
-production. Do not claim the DeepSeek fallback has been live-tested.
+the legacy visual model. As of 2026-11-07, `CONSUMER_VISION_PROVIDER=deepseek`
+selects `deepseek-flash` as the consumer visual main path; `DEEPSEEK_API_KEY`
+is loaded from `/etc/intermap-deepseek.env` (600) via a systemd drop-in.
+Never commit this file. Official API version currently maps to V4.1-Flash-1017.
+Synthetic UI tests passed after explicitly correcting privacy-switch semantics;
+this is not real-device or all-app accuracy verification, nor a subsecond guarantee.
 `TRAIN_PASSWORD` is required for protected review; production preserves the existing
 password in `/etc/intermap-consumer-auth.env` (mode 600), loaded by a systemd drop-in.
 Do not commit this file or restore a hardcoded password default.

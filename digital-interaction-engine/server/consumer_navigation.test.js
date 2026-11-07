@@ -42,6 +42,23 @@ test('unauthorized frame requests cannot invoke the model',async()=>{
   const store=new ConsumerNavigation('/unused',()=>{throw Error('must not run');});
   await assert.rejects(store.dispatch('frame',{},'bad','test'),/UNAUTHORIZED/);
 });
+test('DeepSeek can be selected for normal visual navigation without replan',async(t)=>{
+  const keys=['CONSUMER_VISION_PROVIDER','DEEPSEEK_API_KEY'];
+  const saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+  const fetchBefore=global.fetch;
+  t.after(()=>{ global.fetch=fetchBefore; for(const k of keys) { if(saved[k]===undefined) delete process.env[k]; else process.env[k]=saved[k]; } });
+  process.env.CONSUMER_VISION_PROVIDER='deepseek'; process.env.DEEPSEEK_API_KEY='test-only';
+  global.fetch=async(url,options)=>{
+    assert.equal(url,'https://api.deepseek.com/chat/completions');
+    const body=JSON.parse(options.body);
+    assert.equal(body.model,'deepseek-flash'); assert.equal(body.thinking.type,'disabled');
+    assert.equal(body.response_format.type,'json_object');
+    assert(body.messages[0].content[0].text.includes('开启=不共享'));
+    return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({page_type:'settings',action:'click',step_text:'点击底部开始'})}}]})};
+  };
+  const result=await new ConsumerNavigation('/unused').callModel({goal:'导航',history:[],image:'data:image/jpeg;base64,/9j/AA==',replan:false});
+  assert.equal(result.model,'deepseek-flash');
+});
 test('feedback survives a server restart, is idempotent and only creates pending groups',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'consumer-restart-'));
   try {

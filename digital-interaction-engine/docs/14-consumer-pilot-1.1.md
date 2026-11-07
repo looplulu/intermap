@@ -1,5 +1,30 @@
 # 小路 1.1 联网试用版
 
+## 1.1.05 更新（2026-11-07）
+
+`CONSUMER_VISION_PROVIDER=deepseek`选择DeepSeek原厂`deepseek-flash`作为消费者视觉主路，
+使用非思考模式、JSON输出。官方当前映射V4.1-Flash-1017，不使用Pro（其不支持视觉）。
+API路由与客户端协议不变，1.1.04可直接使用新后端。1.1.05仅跟随更新安装包版本标识。
+将该变量设回ark可恢复旧主路；显式纠错时仍按既有逻辑调用已配置的DeepSeek。
+没有新增自动串行失败重试；provider请求失败仍暂停并记录固定错误码。
+
+密钥位于`/etc/intermap-deepseek.env`，权限600，systemd的`deepseek.conf`通过
+EnvironmentFile加载。不得上传GitHub、写进APK、打印请求头或完整环境。
+旧ARK密钥保留用于旧网页及可控回退。所有原有四秒提醒、黑屏恢复、数据收集协议保留。
+
+测试使用自有Logo、相同生产提示词、相同服务器：DeepSeek完整返回1610/1478/1147ms，
+豆包对照4080ms。合成中文字体设置界面两次1486/1430ms，定位“字体大小”正确。
+合成隐私界面初测把开关意义说反，已明确“开启=不共享、关闭=允许；灰色左侧圆点=已关闭”，
+修正后完整返回1407/1363/1073ms，均指向底部开始；该规则与用户之前提供的截图一致。
+DeepSeek流式首字598ms、完整有效结果1185ms。原始用户截图本地路径已不可用，
+不能将合成图验证称为真机截图或全App验收。没有达到端到端1秒语音保证。
+
+正式HTTPS合成界面canary完整返回1484ms，指导正确。日志确认DeepSeek，合成记录随后单独清理。
+
+参考：[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)、
+[视觉接口](https://api-docs.deepseek.com/guides/vision/)。
+构建`flutter build apk --release --build-name=1.1.05 --build-number=25`。
+
 ## 1.1.04 更新（2026-11-07）
 
 - 四秒间隔从原生TTS完成回调计时，不从开口计时；同页重新识别不会立即再播。
@@ -122,10 +147,9 @@ Base URL：`https://loop-lulu.com/intermap/api/consumer/`。
 仅信任来自本机代理的 `X-Real-IP`，bearer header 保留，读取超时25秒、请求体上限3MB。
 `review` 未接入旧网页复盘 UI，维护者通过受保护接口或服务器文件查看，不对普通用户开放。
 
-后端 `consumer_navigation.js` 使用 capture service 的 `ARK_API_KEY`；默认模型
-`doubao-seed-2-1-turbo-260628`，可以用 `ARK_MODEL` 覆盖。密钥不进入 APK。
-只有明确纠错、且配置 `DEEPSEEK_API_KEY` 时才切换 `deepseek-flash`。
-生产尚未配置 DeepSeek，未验收该分支。主路不是两次串行 GUI + LLM 调用。
+后端通过`CONSUMER_VISION_PROVIDER=deepseek`使用私有配置中的`DEEPSEEK_API_KEY`和`deepseek-flash`。
+未选择DeepSeek主路时使用ARK，默认模型可用`ARK_MODEL`覆盖；明确纠错时也可使用已配置的DeepSeek。
+生产已配置并完成合成图HTTPS验证，未做真机验收。密钥不进入APK，不做两次串行GUI+LLM调用。
 `TRAIN_PASSWORD` 为后台必需配置，缺失时验证失败，不再使用源码默认密码。
 生产沿用用户原密码，私有文件 `/etc/intermap-consumer-auth.env` 权限600，由systemd
 `intermap-capture.service.d/consumer-auth.conf` 注入；这些私有配置不能上传GitHub。
