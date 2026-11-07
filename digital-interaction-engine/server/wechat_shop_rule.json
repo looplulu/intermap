@@ -1,0 +1,12 @@
+{
+  "id": "wechat_shop_entry_v1",
+  "app_key": "com.tencent.mm",
+  "platform": "android",
+  "scope": "explicit_wechat_shop_shopping_task",
+  "observed_entry": "小店与卡包",
+  "reported_aliases": ["订单与卡包"],
+  "source": "user_screenshot_and_correction_2026-11-07",
+  "screenshot_sha256": "dcdac7fdeffd12a3a3f55784e05e2622827c0c839abc54a02dfa6e9451fb250b",
+  "verification": "entry_observed_not_full_flow_verified",
+  "constraints": "明确是视频号或微信小店购物订单时：微信的我页面优先寻找购物订单入口，例如小店与卡包；订单与卡包为用户报告的待核实别名，只能在实际可见时使用。必须按当前可见文字和位置指引，不把别名当成必定存在。不走服务、钱包、支付账单查商品订单。若找不到购物入口，先重新观察、滑动或澄清，不擅自改走钱包。进入后依据实际画面找商品订单，由用户选择要退的商品，再进入该订单售后。找到入口或商品订单不是退货完成。"
+}

@@ -56,7 +56,7 @@ class MainActivity : FlutterActivity() {
                         "device_model" to Build.MODEL, "os_version" to Build.VERSION.RELEASE,
                         "sdk" to Build.VERSION.SDK_INT, "width" to metrics.widthPixels,
                         "height" to metrics.heightPixels, "density" to metrics.density,
-                        "douyin_version" to douyin, "app_version" to "1.1.05"))
+                        "douyin_version" to douyin, "app_version" to "1.1.06"))
                 }
                 "moveToForeground" -> { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)); result.success(null) }
                 "loadSettings" -> {
@@ -148,6 +148,17 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun requestScreenCapture() {
+        speakNative("接下来会出现系统共享窗口。需要切换应用时，请选共享整个屏幕，再点继续。如果出现共享保护，按需要允许目标应用的内容，最后点开始。",0.92f,1.0f)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("接下来这样允许共享")
+            .setMessage("1. 系统弹窗中，先确认共享范围，再点“继续”或“立即开始”。需要跨App导航时选“共享整个屏幕”；只共享单个App时，切换到其他App后可能看不到画面。\n\n2. 如果出现“屏幕共享保护”：愿意共享微信内容时，请检查“隐私应用保护”。开启会隐藏微信，关闭才允许共享；通知、通话等保护不用关闭。若本来已关闭，不用再点。\n\n3. 最后点“开始”。其他品牌请按实际界面操作，没有同名开关时不要乱关权限。\n\n共享时小路会把画面交给云端分析；请避开密码、验证码和私人聊天。")
+            .setPositiveButton("开始授权") { _,_ -> launchCapturePermission() }
+            .setNegativeButton("取消") { _,_ -> pendingResult?.success(false); pendingResult=null; nativeTts?.stop(); pendingTtsTexts.clear() }
+            .setOnCancelListener { pendingResult?.success(false); pendingResult=null; nativeTts?.stop(); pendingTtsTexts.clear() }
+            .show()
+    }
+
+    private fun launchCapturePermission() {
         val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         @Suppress("DEPRECATION")
         val permission = if (Build.VERSION.SDK_INT >= 34) {
@@ -165,6 +176,7 @@ class MainActivity : FlutterActivity() {
             return
         }
         if (requestCode == REQUEST_CODE_SCREEN_CAPTURE) {
+            pendingTtsTexts.clear(); nativeUtteranceId=null; nativeSpeaking=false; nativeTts?.stop()
             if (resultCode == Activity.RESULT_OK && data != null) {
                 // 启动截屏 Service
                 val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {

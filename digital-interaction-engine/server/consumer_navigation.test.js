@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {ConsumerNavigation, normalize} = require('./consumer_navigation');
+const {ConsumerNavigation, normalize, selectRoutePolicy} = require('./consumer_navigation');
 
 test('private screen strings and images never enter opt-in journals', async () => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'consumer-test-'));
@@ -27,6 +27,29 @@ test('no opt-in produces no persistent feedback files', async()=>{
 });
 test('unknown outcomes and invented action types are rejected',()=>{
   assert.throws(()=>normalize({page_type:'orders',action:'auto_click',step_text:'点击'}),/INVALID_MODEL/);
+});
+test('explicit WeChat shopping channels select the observed shop constraint',()=>{
+  for (const goal of ['视频号订单退货','微信小店退款','公众号买的商品退货']) assert.equal(selectRoutePolicy(goal),'wechat_shop_entry_v1');
+  for (const goal of ['微信退货','抖音订单退款','看视频号']) assert.equal(selectRoutePolicy(goal),'general');
+});
+test('explicit shop tasks veto a payment detour but accept visible shop aliases',async()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'shop-route-'));
+  let target='页面中间 钱包';
+  try {
+    const nav=new ConsumerNavigation(root,async(input)=>{
+      assert.equal(input.route_policy,'wechat_shop_entry_v1');
+      return {app_key:'com.tencent.mm',page_type:'profile',action:'click',target_key:target,step_text:'点击'+target};
+    });
+    const s=nav.create({goal:'我要退视频号的订单',consent:true},'test');
+    const bad=await nav.dispatch('frame',{image:'data:image/jpeg;base64,/9j/AA=='},s.token,'test');
+    assert.equal(bad.action,'clarify');
+    target='下方 小店与卡包';
+    const good=await nav.dispatch('frame',{image:'data:image/jpeg;base64,/9j/AA=='},s.token,'test');
+    assert.equal(good.action,'click'); assert(good.step_text.includes('小店与卡包'));
+    const journal=fs.readFileSync(path.join(root,'consumer_feedback_v1',s.session_id+'.jsonl'),'utf8');
+    assert(journal.includes('payment_detour_blocked')); assert(journal.includes('小店与卡包'));
+    assert(!journal.includes('我要退视频号'));
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
 test('any app identity and stable page keys survive normalization',()=>{
   const result=normalize({app_key:'com.example.camera',page_type:'other',page_key:'camera/settings',action:'click',step_text:'点击左上角设置'});

@@ -26,6 +26,12 @@ Visual recognition remains the primary perception path. Reviewed maps may add
 conditional evidence later; the 1.1 pilot does not query them in its main path.
 GUI reasoning locates the current state and visible target. Any future map
 retrieval must match state and environment conditions.
+As of 1.1.06, `server/wechat_shop_rule.json` is a narrow user-screenshot-backed
+entry constraint for explicit WeChat-shop shopping tasks. It does not enable old
+Golden Flow retrieval or claim a fully verified refund route. The observed label
+is 小店与卡包; 订单与卡包 is only a reported alias and may be used only when visible.
+Deploy that JSON beside consumer_navigation.js. Do not route an explicit shopping
+channel to wallet/payment bills merely by generic model inference.
 As confirmed on 2026-11-01, Android navigation accepts general goals across apps
 and system pages, not just Douyin or refunds. Do not use app-specific examples in
 generic entry/confirmation UI. This does not claim every app/version is verified.
