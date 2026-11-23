@@ -8,6 +8,8 @@
 .env
 .env.*
 **/local.properties
+# Competition application is not part of the source backup.
+digital-interaction-engine/docs/15-opc-2026-application-draft.md
 
 # Flutter / Dart
 App/.dart_tool/
